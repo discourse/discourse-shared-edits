@@ -56,7 +56,7 @@ function initWithApi(api) {
       return result;
     },
 
-    colludeOnTopic() {
+    sharedEdit() {
       const post = this.findAncestorModel();
       this.appEvents.trigger("shared-edit-on-post", post);
     }
@@ -69,8 +69,6 @@ function initWithApi(api) {
       if (!this.currentUser.staff || !contents.children) {
         return contents;
       }
-
-      console.log(attrs);
 
       contents.children.push(
         this.attach("post-admin-menu-button", {
@@ -106,7 +104,7 @@ function initWithApi(api) {
   });
 
   api.modifyClass("component:scrolling-post-stream", {
-    colludeOnTopic() {
+    sharedEdit() {
       this.appEvents.trigger("shared-edit-on-post");
     }
   });
@@ -169,7 +167,7 @@ function initWithApi(api) {
     },
 
     @observes("model.reply")
-    _handleCollusion() {
+    _handleSharedEdit() {
       if (this.get("model.action") === SHARED_EDIT_ACTION) {
         performSharedEdit(this.model);
       }
