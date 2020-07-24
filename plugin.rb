@@ -43,4 +43,10 @@ after_initialize do
     end
   end
 
+  register_post_custom_field_type(DiscourseSharedEdits::SHARED_EDITS_ENABLED, :boolean)
+
+  add_to_serializer(:post, :shared_edits_enabled) do
+    SiteSetting.shared_edits_enabled &&
+      object.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
+  end
 end
