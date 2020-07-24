@@ -2,7 +2,7 @@ import { withPluginApi } from "discourse/lib/plugin-api";
 import { on, observes } from "discourse-common/utils/decorators";
 import {
   setupSharedEdit,
-  teardownSharedEdits,
+  teardownSharedEdit,
   performSharedEdit
 } from "../lib/shared-edits";
 
@@ -154,7 +154,7 @@ function initWithApi(api) {
 
     close() {
       if (this.get("model.action") === SHARED_EDIT_ACTION) {
-        teardownSharedEdits(this.model);
+        teardownSharedEdit(this.model);
       }
       return this._super();
     },
