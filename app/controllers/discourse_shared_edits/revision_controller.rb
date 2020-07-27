@@ -30,8 +30,6 @@ module ::DiscourseSharedEdits
     end
 
     def revise
-      sleep 0.5
-
       params.require(:revision)
       params.require(:client_id)
       params.require(:version)
