@@ -21,6 +21,7 @@ module ::DiscourseSharedEdits
     def latest
       post = Post.find(params[:post_id].to_i)
       guardian.ensure_can_see!(post)
+      SharedEditRevision.commit!(post.id, apply_to_post: false)
       version, raw = SharedEditRevision.latest_raw(post)
       render json: {
         raw: raw,
@@ -29,6 +30,8 @@ module ::DiscourseSharedEdits
     end
 
     def revise
+      sleep 0.5
+
       params.require(:revision)
       params.require(:client_id)
       params.require(:version)
@@ -48,16 +51,23 @@ module ::DiscourseSharedEdits
 
       revisions =
         if version == master_version + 1
-          {
+          [{
             version: version,
-            revision: revision
-          }
+            revision: revision,
+            client_id: params[:client_id]
+          }]
         else
           SharedEditRevision
             .where(post_id: post.id)
             .where('version > ?', master_version)
             .order(:version)
-            .pluck(:revision, :version).map { |r, v| { version: v, revision: r } }
+            .pluck(:revision, :version, :client_id).map { |r, v, c|
+              {
+                version: v,
+                revision: r,
+                client_id: c
+              }
+            }
         end
 
       SharedEditRevision.ensure_will_commit(post.id)

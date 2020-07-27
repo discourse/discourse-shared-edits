@@ -10,25 +10,27 @@ module OtTextUnicode
       context = MiniRacer::Context.new
       context.eval("module = {exports: {}}")
       ot_path = File.expand_path("../../support/text-unicode-webpack/dist/text-unicode-dist.js", __FILE__)
-      context.eval("ot = #{File.read(ot_path)}")
+
+      context.eval("window = {}; #{File.read(ot_path)}; ot = window.otLib.default.OtUnicode")
+
       @context = context
     end
   end
 
   def self.apply(text, ops = [])
     json = String === ops ? ops : ops.to_json
-    context.eval("ot.default.apply(#{text.inspect}, #{json})")
+    context.eval("ot.apply(#{text.inspect}, #{json})")
   end
 
   def self.compose(ops1 = [], ops2 = [])
     json1 = String === ops1 ? ops1 : ops1.to_json
     json2 = String === ops2 ? ops2 : ops2.to_json
-    context.eval("ot.default.compose(#{json1}, #{json2})")
+    context.eval("ot.compose(#{json1}, #{json2})")
   end
 
   def self.transform(ops1 = [], ops2 = [], side = "right")
     json1 = String === ops1 ? ops1 : ops1.to_json
     json2 = String === ops2 ? ops2 : ops2.to_json
-    context.eval("ot.default.transform(#{json1}, #{json2}, #{side.inspect})")
+    context.eval("ot.transform(#{json1}, #{json2}, #{side.inspect})")
   end
 end

@@ -24,7 +24,7 @@ class SharedEditRevision < ActiveRecord::Base
     post = Post.find(post_id)
     if enable
       init!(post)
-      post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED] = "1"
+      post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED] = true
     else
       commit!(post_id)
       SharedEditRevision.where(post_id: post_id).delete_all
@@ -49,7 +49,7 @@ class SharedEditRevision < ActiveRecord::Base
     end
   end
 
-  def self.commit!(post_id)
+  def self.commit!(post_id, apply_to_post: true)
 
     version_with_raw =
       SharedEditRevision
@@ -78,6 +78,7 @@ class SharedEditRevision < ActiveRecord::Base
 
     last_revision.update!(raw: raw) if last_revision.raw != raw
     return if last_revision.post_revision_id
+    return if !apply_to_post
 
     post = Post.find(post_id)
     revisor = PostRevisor.new(post)

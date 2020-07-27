@@ -25,7 +25,7 @@ describe ::DiscourseSharedEdits::RevisionController do
       expect(response.status).to eq(200)
 
       post1.reload
-      expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to eq("1")
+      expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to eq(true)
 
       put "/shared_edits/p/#{post1.id}/disable"
       expect(response.status).to eq(200)
@@ -57,8 +57,6 @@ describe ::DiscourseSharedEdits::RevisionController do
       put "/shared_edits/p/#{post1.id}", params: {
         client_id: 'abc', version: 1, revision: [{ d: 4 }, "1234"].to_json
       }
-
-      SharedEditRevision.commit!(post1.id)
 
       get "/shared_edits/p/#{post1.id}"
       expect(response.status).to eq(200)

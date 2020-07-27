@@ -2700,6 +2700,11 @@ os-browserify@^0.3.0:
   resolved "https://registry.yarnpkg.com/os-browserify/-/os-browserify-0.3.0.tgz#854373c7f5c2315914fc9bfc6bd8238fdda1ec27"
   integrity sha1-hUNzx/XCMVkU/Jv8a9gjj92h7Cc=
 
+ot-diff@^1.1.1:
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/ot-diff/-/ot-diff-1.1.1.tgz#c587f17d15efd0d9170a5d38e606368a57643ad4"
+  integrity sha1-xYfxfRXv0NkXCl045gY2ildkOtQ=
+
 ot-text-unicode@^4.0.0:
   version "4.0.0"
   resolved "https://registry.yarnpkg.com/ot-text-unicode/-/ot-text-unicode-4.0.0.tgz#778a327535c81ed265b36ebe1bd677f31bae1e32"

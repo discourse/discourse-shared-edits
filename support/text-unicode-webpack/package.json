@@ -17,6 +17,7 @@
     "webpack-cli": "^3.3.12"
   },
   "dependencies": {
+    "ot-diff": "^1.1.1",
     "ot-text-unicode": "^4.0.0"
   }
 }
