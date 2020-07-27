@@ -29,6 +29,16 @@ module ::DiscourseSharedEdits
       }
     end
 
+    def commit
+      params.require(:post_id)
+
+      post = Post.find(params[:post_id].to_i)
+      guardian.ensure_can_see!(post)
+      SharedEditRevision.commit!(post.id)
+
+      render json: success_json
+    end
+
     def revise
       params.require(:revision)
       params.require(:client_id)

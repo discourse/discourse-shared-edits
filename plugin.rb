@@ -33,6 +33,7 @@ after_initialize do
     put '/p/:post_id/disable' => 'revision#disable'
     put '/p/:post_id' => 'revision#revise'
     get '/p/:post_id' => 'revision#latest'
+    put '/p/:post_id/commit' => 'revision#commit'
   end
 
   Discourse::Application.routes.append do

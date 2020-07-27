@@ -26,79 +26,21 @@ let loadedTextUnicode = false;
 export function teardownSharedEdit(composer) {
   const post = composer.post;
 
+  const manager = composer.sharedEditManager;
+  if (manager) {
+    manager.commit();
+  }
+
   composer.messageBus.unsubscribe(`/shared_edits/${post.id}`);
   composer.set("sharedEditManager.composer", null);
   composer.set("sharedEditManager", null);
 }
 
 export function performSharedEdit(composer) {
-  if (loadedTextUnicode) {
-    sendDiffThrottled(composer);
-  } else {
-    loadScript(
-      "/plugins/discourse-shared-edits/javascripts/text-unicode-dist.js"
-    ).then(() => {
-      loadedTextUnicode = true;
-      sendDiffThrottled(composer);
-    });
+  if (composer.sharedEditManager) {
+    composer.sharedEditManager.performSharedEdit();
   }
 }
-
-let ajaxInProgress = false;
-
-function sendDiff(composer) {
-  if (!composer.sharedEditManager) {
-    return;
-  }
-
-  const changes = diff(composer.sharedEditManager.raw, composer.reply);
-  const submittedRaw = composer.reply;
-
-  if (ajaxInProgress) {
-    sendDiffThrottled(composer);
-    return;
-  }
-
-  if (changes.length > 0) {
-    ajaxInProgress = true;
-
-    ajax(`/shared_edits/p/${composer.post.id}`, {
-      method: "PUT",
-      data: {
-        revision: JSON.stringify(changes),
-        version: composer.sharedEditManager.version,
-        client_id: composer.messageBus.clientId
-      }
-    })
-      .then(result => {
-        const inProgressChanges = diff(submittedRaw, composer.reply);
-
-        composer.sharedEditManager.applyRevisions(
-          result.revisions,
-          inProgressChanges
-        );
-      })
-      .finally(() => {
-        ajaxInProgress = false;
-      });
-  }
-}
-
-function jsThrottle(func, wait) {
-  let self, args;
-  const later = function() {
-    func.apply(self, args);
-  };
-
-  return function() {
-    self = this;
-    args = arguments;
-
-    throttle(null, later, wait, false);
-  };
-}
-
-const sendDiffThrottled = jsThrottle(sendDiff, THROTTLE_SAVE);
 
 function diff(before, after) {
   const diffLib = window.otLib.default.OtDiff.diff;
@@ -137,6 +79,65 @@ const SharedEditManager = EmberObject.extend({
 
   submittedChanges: null,
   pendingChanges: null,
+  ajaxInProgress: false,
+
+  commit() {
+    ajax(`/shared_edits/p/${this.composer.post.id}/commit`, {
+      method: "PUT"
+    }).catch(popupAjaxError);
+  },
+
+  performSharedEdit() {
+    if (loadedTextUnicode) {
+      this.sendDiffThrottled();
+    } else {
+      loadScript(
+        "/plugins/discourse-shared-edits/javascripts/text-unicode-dist.js"
+      ).then(() => {
+        loadedTextUnicode = true;
+        this.sendDiffThrottled();
+      });
+    }
+  },
+
+  sendDiffThrottled() {
+    throttle(this, "sendDiff", THROTTLE_SAVE, false);
+  },
+
+  sendDiff() {
+    const composer = this.composer;
+    if (!composer) {
+      return;
+    }
+
+    if (this.ajaxInProgress) {
+      this.sendDiffThrottled();
+      return;
+    }
+
+    const changes = diff(this.raw, composer.reply);
+    const submittedRaw = composer.reply;
+
+    if (changes.length > 0) {
+      this.ajaxInProgress = true;
+
+      ajax(`/shared_edits/p/${composer.post.id}`, {
+        method: "PUT",
+        data: {
+          revision: JSON.stringify(changes),
+          version: this.version,
+          client_id: composer.messageBus.clientId
+        }
+      })
+        .then(result => {
+          const inProgressChanges = diff(submittedRaw, composer.reply);
+          this.applyRevisions(result.revisions, inProgressChanges);
+        })
+        .finally(() => {
+          this.ajaxInProgress = false;
+        });
+    }
+  },
 
   applyRevisions(revs, inProgressChanges) {
     let currentChanges =
@@ -170,8 +171,6 @@ const SharedEditManager = EmberObject.extend({
     this.set("version", newVersion);
 
     if (currentChanges.length > 0) {
-      //console.log(currentChanges);
-
       newRaw = otUnicode.apply(newRaw, currentChanges);
     }
 
@@ -181,23 +180,16 @@ const SharedEditManager = EmberObject.extend({
       );
 
       if (input.selectionStart) {
+        const selLength = input.selectionEnd - input.selectionStart;
+
         let position = otUnicode.transformPosition(
           input.selectionStart,
           newChanges
         );
 
-        //position = otUnicode.transformPosition(position, currentChanges);
-
-        //console.log("x");
-        //console.log(currentChanges);
-        //console.log(newChanges);
-        //console.log(input.selectionStart);
-        //console.log(position);
-        //console.log("y");
-
         next(null, () => {
           input.selectionStart = position;
-          input.selectionEnd = position;
+          input.selectionEnd = position + selLength;
         });
       }
 
@@ -210,7 +202,10 @@ const SharedEditManager = EmberObject.extend({
     const post = composer.post;
 
     composer.messageBus.subscribe(`/shared_edits/${post.id}`, message => {
-      if (message.client_id !== composer.messageBus.clientId) {
+      if (
+        message.client_id !== composer.messageBus.clientId &&
+        !this.ajaxInProgress
+      ) {
         this.applyRevisions([message]);
       }
     });
