@@ -1,0 +1,10 @@
+#reply-control.composer-action-sharedEdit {
+  .save-or-cancel {
+    button, a {
+      display: none;
+    }
+  }
+  .composer-actions {
+    display: none;
+  }
+}

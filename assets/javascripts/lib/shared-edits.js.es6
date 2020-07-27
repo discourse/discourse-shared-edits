@@ -2,7 +2,7 @@ import { ajax } from "discourse/lib/ajax";
 import EmberObject from "@ember/object";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import loadScript from "discourse/lib/load-script";
-import { throttle } from "@ember/runloop";
+import { throttle, next } from "@ember/runloop";
 
 const THROTTLE_SAVE = 500;
 
@@ -27,6 +27,8 @@ export function teardownSharedEdit(composer) {
   const post = composer.post;
 
   composer.messageBus.unsubscribe(`/shared_edits/${post.id}`);
+  composer.set("sharedEditManager.composer", null);
+  composer.set("sharedEditManager", null);
 }
 
 export function performSharedEdit(composer) {
@@ -145,6 +147,8 @@ const SharedEditManager = EmberObject.extend({
 
     const otUnicode = window.otLib.default.OtUnicode;
 
+    let newChanges = [];
+
     revs.forEach(revision => {
       if (revision.version === newVersion + 1) {
         let parsedRevision = JSON.parse(revision.revision);
@@ -152,6 +156,7 @@ const SharedEditManager = EmberObject.extend({
         newVersion = revision.version;
 
         if (revision.client_id !== this.composer.messageBus.clientId) {
+          newChanges = otUnicode.compose(newChanges, parsedRevision);
           currentChanges = otUnicode.transform(
             currentChanges,
             parsedRevision,
@@ -165,10 +170,37 @@ const SharedEditManager = EmberObject.extend({
     this.set("version", newVersion);
 
     if (currentChanges.length > 0) {
+      //console.log(currentChanges);
+
       newRaw = otUnicode.apply(newRaw, currentChanges);
     }
 
     if (newRaw !== this.composer.reply) {
+      const input = document.querySelector(
+        "#reply-control textarea.d-editor-input"
+      );
+
+      if (input.selectionStart) {
+        let position = otUnicode.transformPosition(
+          input.selectionStart,
+          newChanges
+        );
+
+        //position = otUnicode.transformPosition(position, currentChanges);
+
+        //console.log("x");
+        //console.log(currentChanges);
+        //console.log(newChanges);
+        //console.log(input.selectionStart);
+        //console.log(position);
+        //console.log("y");
+
+        next(null, () => {
+          input.selectionStart = position;
+          input.selectionEnd = position;
+        });
+      }
+
       this.composer.set("reply", newRaw);
     }
   },

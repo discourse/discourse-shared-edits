@@ -8,6 +8,8 @@
 
 enabled_site_setting :shared_edits_enabled
 
+register_asset 'stylesheets/common/discourse-shared-edits.scss'
+
 after_initialize do
 
   module ::DiscourseSharedEdits

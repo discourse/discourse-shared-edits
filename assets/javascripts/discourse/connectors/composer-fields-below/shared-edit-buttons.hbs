@@ -1,0 +1,9 @@
+{{#if model.creatingSharedEdit}}
+  <div class='leave-shared-edit'>
+    {{#if site.mobileView}}
+      <a href {{action "endSharedEdit"}} tabindex="6" title="{{i18n 'shared_edits.done'}}">{{d-icon "times"}}</a>
+    {{else}}
+      <a href {{action "endSharedEdit"}} class="btn btn-primary" tabindex="6" >{{i18n 'shared_edits.done'}}</a>
+    {{/if}}
+  </div>
+{{/if}}
