@@ -119,7 +119,7 @@ class SharedEditRevision < ActiveRecord::Base
           post.update!(edit_reason: new_reason)
         end
 
-        last_revision.update!(post_revision_id: last_post_revision)
+        last_revision.update!(post_revision_id: last_post_revision.id)
       end
     end
 

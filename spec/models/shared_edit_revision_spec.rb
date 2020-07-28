@@ -86,5 +86,9 @@ describe SharedEditRevision do
     expect(reason).to include(user1.username)
     expect(reason).to include(user2.username)
 
+    edit_rev = SharedEditRevision.where(post_id: post.id).order('version desc').first
+
+    expect(edit_rev.post_revision_id).to eq(rev.id)
+
   end
 end
