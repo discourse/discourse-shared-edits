@@ -55,7 +55,7 @@ class SharedEditRevision < ActiveRecord::Base
       SharedEditRevision
         .where(post_id: post_id)
         .where('raw IS NOT NULL')
-        .order(:version)
+        .order('version desc')
         .first
 
     return if !version_with_raw
