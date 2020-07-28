@@ -21,6 +21,9 @@ describe SharedEditRevision do
       0123456
     RAW
 
+    user1 = Fabricate(:user)
+    user2 = Fabricate(:user)
+
     post = Fabricate(:post, raw: raw)
     SharedEditRevision.init!(post)
 
@@ -28,7 +31,7 @@ describe SharedEditRevision do
 
     messages = MessageBus.track_publish("/shared_edits/#{post.id}") do
       version, revision = fake_edit(
-        post, 1, [8, { d: 7 }, "mister"], version: 1
+        post, user1.id, [8, { d: 7 }, "mister"], version: 1
       )
     end
 
@@ -52,13 +55,13 @@ describe SharedEditRevision do
     expect(post.raw).to eq(new_raw)
 
     version, revision = fake_edit(
-      post, 7, [{ d: 7 }, "hello"], version: 1
+      post, user2.id, [{ d: 7 }, "hello"], version: 1
     )
 
     expect(version).to eq(3)
     expect(revision).to eq("[{\"d\":7},\"hello\"]")
 
-    version, revision = fake_edit(post, 1, [16, { d: 7 }, "world"], version: 1)
+    version, revision = fake_edit(post, user1.id, [16, { d: 7 }, "world"], version: 1)
 
     expect(version).to eq(4)
     expect(revision).to eq("[13,{\"d\":7},\"world\"]")
@@ -76,6 +79,12 @@ describe SharedEditRevision do
     post.reload
 
     expect(post.raw).to eq(new_raw)
+
+    rev = post.revisions.order(:number).first
+
+    reason = rev.modifications["edit_reason"].to_s
+    expect(reason).to include(user1.username)
+    expect(reason).to include(user2.username)
 
   end
 end

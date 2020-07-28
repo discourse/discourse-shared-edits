@@ -1,0 +1,3 @@
+en:
+  shared_edits:
+    reason: "Edited By: %{users}"

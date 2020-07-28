@@ -71,9 +71,12 @@ class SharedEditRevision < ActiveRecord::Base
 
     last_revision = version_with_raw
 
+    editors = []
+
     to_resolve.each do |rev|
       raw = OtTextUnicode.apply(raw, rev.revision)
       last_revision = rev
+      editors << rev.user_id
     end
 
     last_revision.update!(raw: raw) if last_revision.raw != raw
@@ -96,7 +99,27 @@ class SharedEditRevision < ActiveRecord::Base
     Post.transaction do
       done = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
       if done
-        last_revision.update!(post_revision_id: last_revision_id_for_post(post))
+        last_post_revision = PostRevision
+          .where(post: post).limit(1).order('number desc').first
+
+        reason = last_post_revision.modifications["edit_reason"] || ""
+        usernames = reason[1]&.split(",")&.map(&:strip) || []
+
+        User.where(id: editors).pluck(:username).each do |name|
+          usernames << name
+        end
+
+        usernames.uniq!
+
+        new_reason = I18n.t("shared_edits.reason", users: usernames.join(", "))
+
+        if new_reason != reason
+          last_post_revision.modifications["edit_reason"] = new_reason
+          last_post_revision.save!
+          post.update!(edit_reason: new_reason)
+        end
+
+        last_revision.update!(post_revision_id: last_post_revision)
       end
     end
 
@@ -148,6 +171,7 @@ class SharedEditRevision < ActiveRecord::Base
       WHERE :version = (
         SELECT MAX(version) + 1
         FROM shared_edit_revisions
+        WHERE post_id = :post_id
       )
     SQL
 
