@@ -96,8 +96,12 @@ class SharedEditRevision < ActiveRecord::Base
       skip_staff_log: true,
     }
 
+    # revise must be called outside of transaction
+    # otherwise you get phantom edits where and edit can take 2 cycles
+    # to take
+    done = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
+
     Post.transaction do
-      done = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
       if done
         last_post_revision = PostRevision
           .where(post: post).limit(1).order('number desc').first
