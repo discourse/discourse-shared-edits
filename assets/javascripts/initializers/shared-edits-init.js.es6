@@ -159,6 +159,13 @@ function initWithApi(api) {
       return this._super();
     },
 
+    save() {
+      if (this.get("model.action") === SHARED_EDIT_ACTION) {
+        return this.close();
+      }
+      return this._super();
+    },
+
     @on("init")
     _listenForClose() {
       this.appEvents.on("composer:close", () => {
