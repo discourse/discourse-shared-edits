@@ -2,7 +2,7 @@ import { ajax } from "discourse/lib/ajax";
 import EmberObject from "@ember/object";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import loadScript from "discourse/lib/load-script";
-import { throttle, next } from "@ember/runloop";
+import { throttle } from "@ember/runloop";
 
 const THROTTLE_SAVE = 500;
 
@@ -187,10 +187,9 @@ const SharedEditManager = EmberObject.extend({
           newChanges
         );
 
-        next(null, () => {
-          input.selectionStart = position;
-          input.selectionEnd = position + selLength;
-        });
+        input.value = newRaw;
+        input.selectionStart = position;
+        input.selectionEnd = position + selLength;
       }
 
       this.composer.set("reply", newRaw);
