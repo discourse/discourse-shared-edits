@@ -107,7 +107,17 @@ class SharedEditRevision < ActiveRecord::Base
           .where(post: post).limit(1).order('number desc').first
 
         reason = last_post_revision.modifications["edit_reason"] || ""
-        usernames = reason[1]&.split(",")&.map(&:strip) || []
+
+        if Array === reason
+          reason = reason[1]
+        end
+
+        usernames = reason&.split(",")&.map(&:strip) || []
+
+        if usernames.length > 0
+          reason_length = I18n.t("shared_edits.reason", users: "").length
+          usernames[0] = usernames[0][reason_length..-1]
+        end
 
         User.where(id: editors).pluck(:username).each do |name|
           usernames << name
