@@ -128,7 +128,7 @@ class SharedEditRevision < ActiveRecord::Base
         new_reason = I18n.t("shared_edits.reason", users: usernames.join(", "))
 
         if new_reason != reason
-          last_post_revision.modifications["edit_reason"] = new_reason
+          last_post_revision.modifications["edit_reason"] = [nil, new_reason]
           last_post_revision.save!
           post.update!(edit_reason: new_reason)
         end

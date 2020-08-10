@@ -82,7 +82,7 @@ describe SharedEditRevision do
 
     rev = post.revisions.order(:number).first
 
-    reason = rev.modifications["edit_reason"].to_s
+    reason = rev.modifications["edit_reason"][1].to_s
     expect(reason).to include(user1.username)
     expect(reason).to include(user2.username)
     expect(reason).not_to include("d,")
