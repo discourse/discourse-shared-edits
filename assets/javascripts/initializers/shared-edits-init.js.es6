@@ -138,11 +138,14 @@ function initWithApi(api) {
 
   api.modifyClass("controller:composer", {
     open(opts) {
-      return this._super(opts).then(() => {
-        if (opts.action === SHARED_EDIT_ACTION) {
-          setupSharedEdit(this.model);
-        }
-      });
+      const openResponse = this._super(opts);
+      if (openResponse && openResponse.then) {
+        return openResponse.then(() => {
+          if (opts.action === SHARED_EDIT_ACTION) {
+            setupSharedEdit(this.model);
+          }
+        });
+      }
     },
 
     collapse() {
