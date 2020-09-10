@@ -1,5 +1,8 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { on, observes } from "discourse-common/utils/decorators";
+import discourseComputed, {
+  on,
+  observes
+} from "discourse-common/utils/decorators";
 import {
   setupSharedEdit,
   teardownSharedEdit,
@@ -110,7 +113,12 @@ function initWithApi(api) {
   });
 
   api.modifyClass("model:composer", {
-    creatingSharedEdit: computed.equal("action", SHARED_EDIT_ACTION)
+    creatingSharedEdit: computed.equal("action", SHARED_EDIT_ACTION),
+
+    @discourseComputed("action")
+    editingPost() {
+      return this._super(...arguments) || this.creatingSharedEdit;
+    }
   });
 
   api.modifyClass("controller:topic", {
