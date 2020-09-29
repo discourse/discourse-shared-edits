@@ -1,12 +1,12 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
 import discourseComputed, {
   on,
-  observes
+  observes,
 } from "discourse-common/utils/decorators";
 import {
   setupSharedEdit,
   teardownSharedEdit,
-  performSharedEdit
+  performSharedEdit,
 } from "../lib/shared-edits";
 
 import { ajax } from "discourse/lib/ajax";
@@ -24,7 +24,7 @@ function initWithApi(api) {
 
   api.includePostAttributes("shared_edits_enabled");
 
-  api.addPostMenuButton("sharedEdit", post => {
+  api.addPostMenuButton("sharedEdit", (post) => {
     if (!post.shared_edits_enabled || !post.canEdit) {
       return;
     }
@@ -34,7 +34,7 @@ function initWithApi(api) {
       icon: "far-edit",
       title: "shared_edits.button_title",
       className: "shared-edit create fade-out",
-      position: "last"
+      position: "last",
     };
 
     if (!post.mobileView) {
@@ -62,7 +62,7 @@ function initWithApi(api) {
     sharedEdit() {
       const post = this.findAncestorModel();
       this.appEvents.trigger("shared-edit-on-post", post);
-    }
+    },
   });
 
   api.reopenWidget("post-admin-menu", {
@@ -80,7 +80,7 @@ function initWithApi(api) {
           className: "admin-collude",
           label: attrs.shared_edits_enabled
             ? "shared_edits.disable_shared_edits"
-            : "shared_edits.enable_shared_edits"
+            : "shared_edits.enable_shared_edits",
         })
       );
 
@@ -103,13 +103,13 @@ function initWithApi(api) {
           this.scheduleRerender();
         })
         .catch(popupAjaxError);
-    }
+    },
   });
 
   api.modifyClass("component:scrolling-post-stream", {
     sharedEdit() {
       this.appEvents.trigger("shared-edit-on-post");
-    }
+    },
   });
 
   api.modifyClass("model:composer", {
@@ -118,14 +118,14 @@ function initWithApi(api) {
     @discourseComputed("action")
     editingPost() {
       return this._super(...arguments) || this.creatingSharedEdit;
-    }
+    },
   });
 
   api.modifyClass("controller:topic", {
     init() {
       this._super(...arguments);
 
-      this.appEvents.on("shared-edit-on-post", post => {
+      this.appEvents.on("shared-edit-on-post", (post) => {
         const draftKey = post.get("topic.draft_key");
         const draftSequence = post.get("topic.draft_sequence");
 
@@ -133,7 +133,7 @@ function initWithApi(api) {
           post,
           action: SHARED_EDIT_ACTION,
           draftKey,
-          draftSequence
+          draftSequence,
         });
       });
     },
@@ -141,7 +141,7 @@ function initWithApi(api) {
     willDestroy() {
       this.appEvents.off("shared-edit-on-post", this);
       this._super(...arguments);
-    }
+    },
   });
 
   api.modifyClass("controller:composer", {
@@ -196,7 +196,7 @@ function initWithApi(api) {
         return;
       }
       return this._super();
-    }
+    },
   });
 }
 
@@ -204,5 +204,5 @@ export default {
   name: "discourse-shared-edits",
   initialize: () => {
     withPluginApi("0.8.6", initWithApi);
-  }
+  },
 };
