@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 require 'fileutils'
 
-Dir.chdir(File.expand_path('../../../..', __FILE__)) do
+Dir.chdir(File.expand_path('../../../..', __FILE__)) do # rubocop:disable Discourse/NoChdir
 
   require File.expand_path('../../config/environment', __FILE__)
 
