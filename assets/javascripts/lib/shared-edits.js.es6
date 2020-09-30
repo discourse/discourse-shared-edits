@@ -11,7 +11,7 @@ export function setupSharedEdit(composer) {
   composer.set("sharedEditManager", manager);
 
   ajax(`/shared_edits/p/${composer.post.id}`)
-    .then(data => {
+    .then((data) => {
       manager.set("version", data.version);
       manager.set("raw", data.raw);
       manager.set("composer", composer);
@@ -83,7 +83,7 @@ const SharedEditManager = EmberObject.extend({
 
   commit() {
     ajax(`/shared_edits/p/${this.composer.post.id}/commit`, {
-      method: "PUT"
+      method: "PUT",
     }).catch(popupAjaxError);
   },
 
@@ -126,10 +126,10 @@ const SharedEditManager = EmberObject.extend({
         data: {
           revision: JSON.stringify(changes),
           version: this.version,
-          client_id: composer.messageBus.clientId
-        }
+          client_id: composer.messageBus.clientId,
+        },
       })
-        .then(result => {
+        .then((result) => {
           const inProgressChanges = diff(submittedRaw, composer.reply);
           this.applyRevisions(result.revisions, inProgressChanges);
         })
@@ -150,7 +150,7 @@ const SharedEditManager = EmberObject.extend({
 
     let newChanges = [];
 
-    revs.forEach(revision => {
+    revs.forEach((revision) => {
       if (revision.version === newVersion + 1) {
         let parsedRevision = JSON.parse(revision.revision);
         newRaw = otUnicode.apply(newRaw, parsedRevision);
@@ -187,9 +187,17 @@ const SharedEditManager = EmberObject.extend({
           newChanges
         );
 
+        // still need to compensate for scrollHeight changes
+        // but at least this is mostly stable
+        const scrollTop = input.scrollTop;
+
         input.value = newRaw;
         input.selectionStart = position;
         input.selectionEnd = position + selLength;
+
+        window.requestAnimationFrame(() => {
+          input.scrollTop = scrollTop;
+        });
       }
 
       this.composer.set("reply", newRaw);
@@ -200,7 +208,7 @@ const SharedEditManager = EmberObject.extend({
     const composer = this.composer;
     const post = composer.post;
 
-    composer.messageBus.subscribe(`/shared_edits/${post.id}`, message => {
+    composer.messageBus.subscribe(`/shared_edits/${post.id}`, (message) => {
       if (
         message.client_id !== composer.messageBus.clientId &&
         !this.ajaxInProgress
@@ -208,5 +216,5 @@ const SharedEditManager = EmberObject.extend({
         this.applyRevisions([message]);
       }
     });
-  }
+  },
 });
