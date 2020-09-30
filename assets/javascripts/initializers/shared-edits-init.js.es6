@@ -124,7 +124,7 @@ function initWithApi(api) {
   api.modifyClass("component:composer-presence-display", {
     _typing() {
       if (this.model.action === SHARED_EDIT_ACTION) {
-        const lastKey = this.model.get("lastKeyPress");
+        const lastKey = this.model.lastKeyPress;
         if (!lastKey || lastKey < Date.now() - 2000) {
           return;
         }
