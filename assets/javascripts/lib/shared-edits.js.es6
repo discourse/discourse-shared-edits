@@ -187,9 +187,17 @@ const SharedEditManager = EmberObject.extend({
           newChanges
         );
 
+        // still need to compensate for scrollHeight changes
+        // but at least this is mostly stable
+        const scrollTop = input.scrollTop;
+
         input.value = newRaw;
         input.selectionStart = position;
         input.selectionEnd = position + selLength;
+
+        window.requestAnimationFrame(() => {
+          input.scrollTop = scrollTop;
+        });
       }
 
       this.composer.set("reply", newRaw);

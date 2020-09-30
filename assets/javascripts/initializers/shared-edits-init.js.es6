@@ -121,6 +121,27 @@ function initWithApi(api) {
     },
   });
 
+  api.modifyClass("component:composer-presence-display", {
+    _typing() {
+      if (this.model.action === SHARED_EDIT_ACTION) {
+        const lastKey = this.model.lastKeyPress;
+        if (!lastKey || lastKey < Date.now() - 2000) {
+          return;
+        }
+      }
+      this._super(...arguments);
+    },
+  });
+
+  api.modifyClass("component:composer-editor", {
+    @on("keyDown")
+    _trackTyping() {
+      if (this.composer.action === SHARED_EDIT_ACTION) {
+        this.composer.set("lastKeyPress", Date.now());
+      }
+    },
+  });
+
   api.modifyClass("controller:topic", {
     init() {
       this._super(...arguments);
