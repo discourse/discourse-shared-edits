@@ -189,7 +189,7 @@ const SharedEditManager = EmberObject.extend({
 
         // still need to compensate for scrollHeight changes
         // but at least this is mostly stable
-        var scrollTop = input.scrollTop;
+        const scrollTop = input.scrollTop;
 
         input.value = newRaw;
         input.selectionStart = position;
