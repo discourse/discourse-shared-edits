@@ -130,7 +130,7 @@ function initWithApi(api) {
         }
       }
       this._super(...arguments);
-    }
+    },
   });
 
   api.modifyClass("component:composer-editor", {
