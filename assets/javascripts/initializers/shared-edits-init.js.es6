@@ -19,8 +19,8 @@ import { SAVE_LABELS, SAVE_ICONS } from "discourse/models/composer";
 const SHARED_EDIT_ACTION = "sharedEdit";
 
 function initWithApi(api) {
-  SAVE_LABELS[[SHARED_EDIT_ACTION]] = "composer.save_edit";
-  SAVE_ICONS[[SHARED_EDIT_ACTION]] = "pencil-alt";
+  SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
+  SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil-alt";
 
   api.includePostAttributes("shared_edits_enabled");
 
