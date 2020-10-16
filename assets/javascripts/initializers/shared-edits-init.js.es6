@@ -191,11 +191,11 @@ function initWithApi(api) {
       return this._super();
     },
 
-    save(force) {
+    save() {
       if (this.get("model.action") === SHARED_EDIT_ACTION) {
         return this.close();
       }
-      return this._super(force);
+      return this._super.apply(this, arguments);
     },
 
     @on("init")
