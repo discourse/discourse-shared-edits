@@ -1,5 +1,2 @@
 support/text-unicode-webpack/node_modules/*
-tmp/*
 node_modules
-yarn-error.log
-.rubocop-https---raw-githubusercontent-com-discourse-*
