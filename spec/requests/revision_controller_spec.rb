@@ -19,6 +19,12 @@ describe ::DiscourseSharedEdits::RevisionController do
       sign_in admin
     end
 
+    it "is hard disabled when plugin is disabled" do
+      SiteSetting.shared_edits_enabled = false
+      put "/shared_edits/p/#{post1.id}/enable"
+      expect(response.status).to eq(403)
+    end
+
     it "is able to enable revisions on a post" do
 
       put "/shared_edits/p/#{post1.id}/enable"

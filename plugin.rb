@@ -42,7 +42,7 @@ after_initialize do
 
   class ::Guardian
     def can_toggle_shared_edits?
-      is_staff?
+      SiteSetting.shared_edits_enabled && is_staff?
     end
   end
 
