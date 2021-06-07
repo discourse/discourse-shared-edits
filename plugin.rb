@@ -48,8 +48,18 @@ after_initialize do
 
   register_post_custom_field_type(DiscourseSharedEdits::SHARED_EDITS_ENABLED, :boolean)
 
+  topic_view_post_custom_fields_allowlister { [DiscourseSharedEdits::SHARED_EDITS_ENABLED] }
+
   add_to_serializer(:post, :shared_edits_enabled) do
-    SiteSetting.shared_edits_enabled &&
-      object.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
+    SiteSetting.shared_edits_enabled && begin
+      if @topic_view.present?
+        @topic_view.post_custom_fields.dig(
+          object.id,
+          DiscourseSharedEdits::SHARED_EDITS_ENABLED
+        )
+      else
+        object.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
+      end
+    end
   end
 end
