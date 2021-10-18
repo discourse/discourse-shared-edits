@@ -8,15 +8,13 @@ import {
   setupSharedEdit,
   teardownSharedEdit,
 } from "../lib/shared-edits";
-
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-
 import { computed } from "@ember/object";
-
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
+const PLUGIN_ID = "discourse-shared-edits";
 
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
@@ -107,12 +105,16 @@ function initWithApi(api) {
   });
 
   api.modifyClass("component:scrolling-post-stream", {
+    pluginId: PLUGIN_ID,
+
     sharedEdit() {
       this.appEvents.trigger("shared-edit-on-post");
     },
   });
 
   api.modifyClass("model:composer", {
+    pluginId: PLUGIN_ID,
+
     creatingSharedEdit: computed.equal("action", SHARED_EDIT_ACTION),
 
     @discourseComputed("action")
@@ -122,6 +124,8 @@ function initWithApi(api) {
   });
 
   api.modifyClass("component:composer-presence-display", {
+    pluginId: PLUGIN_ID,
+
     _typing() {
       if (this.model.action === SHARED_EDIT_ACTION) {
         const lastKey = this.model.lastKeyPress;
@@ -134,6 +138,8 @@ function initWithApi(api) {
   });
 
   api.modifyClass("component:composer-editor", {
+    pluginId: PLUGIN_ID,
+
     @on("keyDown")
     _trackTyping() {
       if (this.composer.action === SHARED_EDIT_ACTION) {
@@ -143,6 +149,8 @@ function initWithApi(api) {
   });
 
   api.modifyClass("controller:topic", {
+    pluginId: PLUGIN_ID,
+
     init() {
       this._super(...arguments);
 
@@ -166,6 +174,8 @@ function initWithApi(api) {
   });
 
   api.modifyClass("controller:composer", {
+    pluginId: PLUGIN_ID,
+
     open(opts) {
       const openResponse = this._super(opts);
       if (openResponse && openResponse.then) {
