@@ -3,7 +3,7 @@
 module ::DiscourseSharedEdits
   class RevisionController < ::ApplicationController
     requires_login
-    before_action :ensure_logged_in
+    before_action :ensure_logged_in, :ensure_shared_edits
     skip_before_action :preload_json, :check_xhr
 
     def enable
@@ -84,6 +84,14 @@ module ::DiscourseSharedEdits
         version: version,
         revisions: revisions
       }
+    end
+
+    protected
+
+    def ensure_shared_edits
+      if !SiteSetting.shared_edits_enabled
+        raise Discourse::InvalidAccess
+      end
     end
 
   end
