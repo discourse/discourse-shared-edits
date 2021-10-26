@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 sv:
+  js:
+    shared_edits:
+      enable_shared_edits: "Aktivera delade redigeringar"
+      disable_shared_edits: "Inaktivera delade redigeringar"
+      edit: "Redigera"
+      button_title: "Redigera inlägg genom samarbete"
+      done: "Klar"
