@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 sv:
+  shared_edits:
+    reason: "Redigerad av: %{users}"
+  site_settings:
+    shared_edits_enabled: Aktivera delad, samverkande, redigering på angivna inlägg.
