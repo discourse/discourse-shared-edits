@@ -16,6 +16,13 @@ import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 const SHARED_EDIT_ACTION = "sharedEdit";
 const PLUGIN_ID = "discourse-shared-edits";
 
+function replaceButton(buttons, find, replace) {
+  const idx = buttons.indexOf(find);
+  if (idx !== -1) {
+    buttons[idx] = replace;
+  }
+}
+
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil-alt";
@@ -56,6 +63,22 @@ function initWithApi(api) {
   });
 
   api.reopenWidget("post-menu", {
+    menuItems() {
+      const result = this._super(...arguments);
+
+      // wiki handles the reply button on its own. If not a wiki and is shared-edit
+      // remove the label from the reply button.
+      if (
+        this.attrs.shared_edits_enabled &&
+        this.attrs.canEdit &&
+        !this.attrs.wiki
+      ) {
+        replaceButton(result, "reply", "reply-small");
+      }
+
+      return result;
+    },
+
     sharedEdit() {
       const post = this.findAncestorModel();
       this.appEvents.trigger("shared-edit-on-post", post);
