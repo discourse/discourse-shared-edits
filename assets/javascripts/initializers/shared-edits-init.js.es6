@@ -47,16 +47,16 @@ function initWithApi(api) {
     return result;
   });
 
+  api.removePostMenuButton("edit", (attrs) => {
+    return attrs.shared_edits_enabled && attrs.canEdit;
+  });
+
   api.reopenWidget("post-menu", {
     menuItems() {
       const result = this._super(...arguments);
 
       if (this.attrs.shared_edits_enabled) {
         this.attrs.wiki = false;
-
-        if (result.includes("edit")) {
-          result.splice(result.indexOf("edit"), 1);
-        }
       }
 
       return result;
