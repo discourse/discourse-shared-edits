@@ -51,17 +51,11 @@ function initWithApi(api) {
     return attrs.shared_edits_enabled && attrs.canEdit;
   });
 
+  api.removePostMenuButton("wiki-edit", (attrs) => {
+    return attrs.shared_edits_enabled && attrs.canEdit;
+  });
+
   api.reopenWidget("post-menu", {
-    menuItems() {
-      const result = this._super(...arguments);
-
-      if (this.attrs.shared_edits_enabled) {
-        this.attrs.wiki = false;
-      }
-
-      return result;
-    },
-
     sharedEdit() {
       const post = this.findAncestorModel();
       this.appEvents.trigger("shared-edit-on-post", post);
