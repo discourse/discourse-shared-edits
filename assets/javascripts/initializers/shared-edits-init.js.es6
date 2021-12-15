@@ -134,6 +134,30 @@ function initWithApi(api) {
     },
   });
 
+  api.modifyClass("controller:history", {
+    pluginId: PLUGIN_ID,
+
+    @discourseComputed("post.shared_edits_enabled")
+    editButtonLabel(sharedEdit) {
+      let label = this._super(...arguments);
+      if (sharedEdit) {
+        label = "post.revisions.controls.edit_post";
+      }
+      return label;
+    },
+
+    actions: {
+      editPost() {
+        if (this.post.shared_edits_enabled) {
+          this.appEvents.trigger("shared-edit-on-post", this.post);
+          this.send("closeModal");
+        } else {
+          this._super(...arguments);
+        }
+      },
+    },
+  });
+
   api.modifyClass("model:composer", {
     pluginId: PLUGIN_ID,
 
