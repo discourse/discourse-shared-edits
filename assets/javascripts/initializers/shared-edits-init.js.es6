@@ -30,8 +30,9 @@ function initWithApi(api) {
   api.includePostAttributes("shared_edits_enabled");
 
   api.addPostClassesCallback((attrs) => {
-    if (attrs.shared_edits_enabled && attrs.canEdit)
+    if (attrs.shared_edits_enabled && attrs.canEdit) {
       return ["shared-edits-post"];
+    }
   });
 
   api.addPostMenuButton("sharedEdit", (post) => {
