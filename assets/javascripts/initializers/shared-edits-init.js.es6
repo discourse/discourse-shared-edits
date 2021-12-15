@@ -16,11 +16,24 @@ import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 const SHARED_EDIT_ACTION = "sharedEdit";
 const PLUGIN_ID = "discourse-shared-edits";
 
+function replaceButton(buttons, find, replace) {
+  const idx = buttons.indexOf(find);
+  if (idx !== -1) {
+    buttons[idx] = replace;
+  }
+}
+
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil-alt";
 
   api.includePostAttributes("shared_edits_enabled");
+
+  api.addPostClassesCallback((attrs) => {
+    if (attrs.shared_edits_enabled && attrs.canEdit) {
+      return ["shared-edits-post"];
+    }
+  });
 
   api.addPostMenuButton("sharedEdit", (post) => {
     if (!post.shared_edits_enabled || !post.canEdit) {
@@ -42,16 +55,26 @@ function initWithApi(api) {
     return result;
   });
 
+  api.removePostMenuButton("edit", (attrs) => {
+    return attrs.shared_edits_enabled && attrs.canEdit;
+  });
+
+  api.removePostMenuButton("wiki-edit", (attrs) => {
+    return attrs.shared_edits_enabled && attrs.canEdit;
+  });
+
   api.reopenWidget("post-menu", {
     menuItems() {
       const result = this._super(...arguments);
 
-      if (this.attrs.shared_edits_enabled) {
-        this.attrs.wiki = false;
-
-        if (result.includes("edit")) {
-          result.splice(result.indexOf("edit"), 1);
-        }
+      // wiki handles the reply button on its own. If not a wiki and is shared-edit
+      // remove the label from the reply button.
+      if (
+        this.attrs.shared_edits_enabled &&
+        this.attrs.canEdit &&
+        !this.attrs.wiki
+      ) {
+        replaceButton(result, "reply", "reply-small");
       }
 
       return result;
@@ -109,6 +132,30 @@ function initWithApi(api) {
 
     sharedEdit() {
       this.appEvents.trigger("shared-edit-on-post");
+    },
+  });
+
+  api.modifyClass("controller:history", {
+    pluginId: PLUGIN_ID,
+
+    @discourseComputed("post.shared_edits_enabled")
+    editButtonLabel(sharedEdit) {
+      let label = this._super(...arguments);
+      if (sharedEdit) {
+        label = "post.revisions.controls.edit_post";
+      }
+      return label;
+    },
+
+    actions: {
+      editPost() {
+        if (this.post.shared_edits_enabled) {
+          this.appEvents.trigger("shared-edit-on-post", this.post);
+          this.send("closeModal");
+        } else {
+          this._super(...arguments);
+        }
+      },
     },
   });
 
