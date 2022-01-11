@@ -6,6 +6,6 @@
 
 ru:
   shared_edits:
-    reason: "Отредактировано пользователем %{users}"
+    reason: "Отредактировано пользователем(-лями) %{users}"
   site_settings:
     shared_edits_enabled: Разрешить совместное редактирование сообщений.
