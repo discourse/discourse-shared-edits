@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 de:
+  shared_edits:
+    reason: "Bearbeitet von: %{users}"
+  site_settings:
+    shared_edits_enabled: Ermögliche die gemeinsame Bearbeitung von bestimmten Beiträgen.
