@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 ar:
+  shared_edits:
+    reason: "تم التعديل بواسطة: %{users}"
+  site_settings:
+    shared_edits_enabled: تفعيل التعديل التعاوني على المنشورات المحدَّدة.

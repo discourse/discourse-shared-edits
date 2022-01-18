@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 es:
+  shared_edits:
+    reason: "Editado por: %{users}"
+  site_settings:
+    shared_edits_enabled: Habilitar la edición compartida y colaborativa en las publicaciones designadas.

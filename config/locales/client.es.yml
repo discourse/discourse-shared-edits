@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 es:
+  js:
+    shared_edits:
+      enable_shared_edits: "Habilitar ediciones compartidas"
+      disable_shared_edits: "Deshabilitar ediciones compartidas"
+      edit: "Editar"
+      button_title: "Editar publicación de forma colaborativa"
+      done: "Hecho"

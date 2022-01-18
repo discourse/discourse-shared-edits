@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 de:
+  js:
+    shared_edits:
+      enable_shared_edits: "Gemeinsame Bearbeitungen aktivieren"
+      disable_shared_edits: "Gemeinsame Bearbeitungen deaktivieren"
+      edit: "Bearbeiten"
+      button_title: "Beitrag gemeinsam bearbeiten"
+      done: "Erledigt"

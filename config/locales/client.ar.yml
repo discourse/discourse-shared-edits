@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 ar:
+  js:
+    shared_edits:
+      enable_shared_edits: "تفعيل التعديلات المشتركة"
+      disable_shared_edits: "تعطيل التعديلات المشتركة"
+      edit: "تعديل"
+      button_title: "تعديل المنشور بشكلٍ تعاوني"
+      done: "تم"
