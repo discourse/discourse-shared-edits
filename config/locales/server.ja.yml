@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 ja:
+  shared_edits:
+    reason: "編集者: %{users}"
+  site_settings:
+    shared_edits_enabled: 指定された投稿での共有、コラボレーション、編集を有効にします。

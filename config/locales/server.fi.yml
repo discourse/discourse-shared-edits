@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 fi:
+  shared_edits:
+    reason: "Muokannut: %{users}"
+  site_settings:
+    shared_edits_enabled: Ota käyttöön määritettyjen viestien jakaminen, yhteistyö ja muokkaaminen.
