@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 pt_BR:
+  shared_edits:
+    reason: "Edição de: %{users}"
+  site_settings:
+    shared_edits_enabled: Ative edições colaborativas e compartilhadas nas postagens designadas.

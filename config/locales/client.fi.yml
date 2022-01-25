@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 fi:
+  js:
+    shared_edits:
+      enable_shared_edits: "Ota jaetut muokkaukset käyttöön"
+      disable_shared_edits: "Poista jaetut muokkaukset käytöstä"
+      edit: "Muokkaa"
+      button_title: "Muokkaa viestiä yhteistyössä"
+      done: "Valmis"
