@@ -10,7 +10,7 @@ import {
 } from "../lib/shared-edits";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import { computed } from "@ember/object";
+import { equal } from "@ember/object/computed";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
@@ -162,7 +162,7 @@ function initWithApi(api) {
   api.modifyClass("model:composer", {
     pluginId: PLUGIN_ID,
 
-    creatingSharedEdit: computed.equal("action", SHARED_EDIT_ACTION),
+    creatingSharedEdit: equal("action", SHARED_EDIT_ACTION),
 
     @discourseComputed("action")
     editingPost() {
