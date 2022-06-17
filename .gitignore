@@ -1,2 +1,3 @@
-support/text-unicode-webpack/node_modules/*
 node_modules
+/gems
+/auto_generated

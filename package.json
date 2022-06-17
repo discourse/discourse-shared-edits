@@ -1,7 +1,10 @@
 {
+  "name": "discourse-shared-edits",
+  "version": "0.1.0",
+  "repository": "https://github.com/discourse/discourse-shared-edits",
   "author": "Discourse",
   "license": "MIT",
   "devDependencies": {
-    "eslint-config-discourse": "latest"
+    "eslint-config-discourse": "^3.2.0"
   }
 }
