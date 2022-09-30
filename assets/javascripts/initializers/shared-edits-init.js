@@ -201,21 +201,27 @@ function initWithApi(api) {
     init() {
       this._super(...arguments);
 
-      this.appEvents.on("shared-edit-on-post", (post) => {
-        const draftKey = post.get("topic.draft_key");
-        const draftSequence = post.get("topic.draft_sequence");
+      this.appEvents.on("shared-edit-on-post", this, "_handleSharedEditOnPost");
+    },
 
-        this.get("composer").open({
-          post,
-          action: SHARED_EDIT_ACTION,
-          draftKey,
-          draftSequence,
-        });
+    _handleSharedEditOnPost(post) {
+      const draftKey = post.get("topic.draft_key");
+      const draftSequence = post.get("topic.draft_sequence");
+
+      this.get("composer").open({
+        post,
+        action: SHARED_EDIT_ACTION,
+        draftKey,
+        draftSequence,
       });
     },
 
     willDestroy() {
-      this.appEvents.off("shared-edit-on-post", this);
+      this.appEvents.off(
+        "shared-edit-on-post",
+        this,
+        "_handleSharedEditOnPost"
+      );
       this._super(...arguments);
     },
   });
