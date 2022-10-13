@@ -92,4 +92,21 @@ describe SharedEditRevision do
     expect(edit_rev.post_revision_id).to eq(rev.id)
 
   end
+
+  it "does not update the post if validation fails" do
+    user = Fabricate(:admin)
+    post = Fabricate(:post, user: user, raw: "Hello world")
+
+    SharedEditRevision.init!(post)
+    SharedEditRevision.revise!(
+      post_id: post.id,
+      user_id: user.id,
+      client_id: user.id,
+      revision: [{"d":11},"Test"],
+      version: 1,
+    )
+    SharedEditRevision.commit!(post.id)
+
+    expect(post.reload.raw).to eq("Hello world")
+  end
 end
