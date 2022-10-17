@@ -92,7 +92,6 @@ class SharedEditRevision < ActiveRecord::Base
     opts = {
       bypass_rate_limiter: true,
       bypass_bump: true,
-      skip_validations: true,
       skip_staff_log: true,
     }
 
