@@ -102,7 +102,7 @@ describe SharedEditRevision do
       post_id: post.id,
       user_id: user.id,
       client_id: user.id,
-      revision: [{"d":11},"Test"],
+      revision: [{ d: 11 }, "Test"],
       version: 1,
     )
     SharedEditRevision.commit!(post.id)
