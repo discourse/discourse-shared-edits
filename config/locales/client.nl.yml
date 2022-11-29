@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 nl:
+  js:
+    shared_edits:
+      enable_shared_edits: "Gedeelde bewerkingen inschakelen"
+      disable_shared_edits: "Gedeelde bewerkingen uitschakelen"
+      edit: "Bewerken"
+      button_title: "Bericht gezamenlijk bewerken"
+      done: "Gereed"
