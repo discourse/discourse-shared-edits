@@ -17,7 +17,7 @@ class SharedEditRevision < ActiveRecord::Base
   end
 
   def self.last_revision_id_for_post(post)
-    PostRevision.where(post: post).limit(1).order('number desc').pluck(:id).first || -1
+    PostRevision.where(post: post).limit(1).order("number desc").pluck(:id).first || -1
   end
 
   def self.toggle_shared_edits!(post_id, enable)
@@ -39,35 +39,33 @@ class SharedEditRevision < ActiveRecord::Base
 
       SharedEditRevision.create!(
         post: post,
-        client_id: 'system',
+        client_id: "system",
         user_id: Discourse.system_user.id,
         version: 1,
-        revision: '[]',
+        revision: "[]",
         raw: post.raw,
-        post_revision_id: revision_id
+        post_revision_id: revision_id,
       )
     end
   end
 
   def self.commit!(post_id, apply_to_post: true)
-
     version_with_raw =
       SharedEditRevision
         .where(post_id: post_id)
-        .where('raw IS NOT NULL')
-        .order('version desc')
+        .where("raw IS NOT NULL")
+        .order("version desc")
         .first
 
     return if !version_with_raw
 
     raw = version_with_raw.raw
 
-    to_resolve = SharedEditRevision
-      .where(
-        post_id: post_id,
-      )
-      .where('version > ?', version_with_raw.version)
-      .order(:version)
+    to_resolve =
+      SharedEditRevision
+        .where(post_id: post_id)
+        .where("version > ?", version_with_raw.version)
+        .order(:version)
 
     last_revision = version_with_raw
 
@@ -89,11 +87,7 @@ class SharedEditRevision < ActiveRecord::Base
     # TODO decide if we need fidelity here around skip_revision
     # skip_revision: true
 
-    opts = {
-      bypass_rate_limiter: true,
-      bypass_bump: true,
-      skip_staff_log: true,
-    }
+    opts = { bypass_rate_limiter: true, bypass_bump: true, skip_staff_log: true }
 
     # revise must be called outside of transaction
     # otherwise you get phantom edits where and edit can take 2 cycles
@@ -102,14 +96,11 @@ class SharedEditRevision < ActiveRecord::Base
 
     Post.transaction do
       if done
-        last_post_revision = PostRevision
-          .where(post: post).limit(1).order('number desc').first
+        last_post_revision = PostRevision.where(post: post).limit(1).order("number desc").first
 
         reason = last_post_revision.modifications["edit_reason"] || ""
 
-        if Array === reason
-          reason = reason[1]
-        end
+        reason = reason[1] if Array === reason
 
         usernames = reason&.split(",")&.map(&:strip) || []
 
@@ -118,9 +109,7 @@ class SharedEditRevision < ActiveRecord::Base
           usernames[0] = usernames[0][reason_length..-1]
         end
 
-        User.where(id: editors).pluck(:username).each do |name|
-          usernames << name
-        end
+        User.where(id: editors).pluck(:username).each { |name| usernames << name }
 
         usernames.uniq!
 
@@ -141,16 +130,15 @@ class SharedEditRevision < ActiveRecord::Base
 
   def self.latest_raw(post_id)
     SharedEditRevision
-      .where('raw IS NOT NULL')
+      .where("raw IS NOT NULL")
       .where(post_id: post_id)
-      .order('version desc')
+      .order("version desc")
       .limit(1)
       .pluck(:version, :raw)
       .first
   end
 
   def self.revise!(post_id:, user_id:, client_id:, revision:, version:)
-
     revision = revision.to_json if !(String === revision)
 
     args = {
@@ -190,33 +178,33 @@ class SharedEditRevision < ActiveRecord::Base
 
     if rows == 1
       post = Post.find(post_id)
-      message = {
-        version: version + 1,
-        revision: revision,
-        client_id: client_id,
-        user_id: user_id
-      }
+      message = { version: version + 1, revision: revision, client_id: client_id, user_id: user_id }
       post.publish_message!("/shared_edits/#{post.id}", message)
       [version + 1, revision]
     else
-      missing = SharedEditRevision.where(post_id: post_id)
-        .where('version > ?', version)
-        .order(:version)
-        .pluck(:version, :revision)
+      missing =
+        SharedEditRevision
+          .where(post_id: post_id)
+          .where("version > ?", version)
+          .order(:version)
+          .pluck(:version, :revision)
 
-      if missing.length == 0
-        raise StandardError, "no revisions to apply"
-      end
+      raise StandardError, "no revisions to apply" if missing.length == 0
 
       missing.each do |missing_version, missing_revision|
         revision = OtTextUnicode.transform(revision, missing_revision)
         version = missing_version
       end
 
-      revise!(post_id: post_id, user_id: user_id, client_id: client_id, revision: revision, version: version)
+      revise!(
+        post_id: post_id,
+        user_id: user_id,
+        client_id: client_id,
+        revision: revision,
+        version: version,
+      )
     end
   end
-
 end
 # t.integer :post_id, null: false
 # t.string :raw

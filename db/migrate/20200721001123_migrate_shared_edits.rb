@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class MigrateSharedEdits < ActiveRecord::Migration[6.0]
-
   def up
     create_table :shared_edit_revisions do |t|
       t.integer :post_id, null: false
@@ -14,7 +13,7 @@ class MigrateSharedEdits < ActiveRecord::Migration[6.0]
       t.timestamps
     end
 
-    add_index :shared_edit_revisions, [:post_id, :version], unique: true
+    add_index :shared_edit_revisions, %i[post_id version], unique: true
   end
 
   def down

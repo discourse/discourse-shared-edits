@@ -1,9 +1,8 @@
 # frozen_string_literal: true
-require 'fileutils'
+require "fileutils"
 
-Dir.chdir(File.expand_path('../../../..', __FILE__)) do # rubocop:disable Discourse/NoChdir
-
-  require File.expand_path('../../config/environment', __FILE__)
+Dir.chdir(File.expand_path("../../../..", __FILE__)) do # rubocop:disable Discourse/NoChdir
+  require File.expand_path("../../config/environment", __FILE__)
 
   post_id = ARGV[0].to_i
 
@@ -16,9 +15,7 @@ Dir.chdir(File.expand_path('../../../..', __FILE__)) do # rubocop:disable Discou
 
   post = Post.find(post_id)
 
-  revisions = %w{
-    the quick brown fox jumped over the lazy fox.
-  }.map { |s| s + " " }
+  revisions = %w[the quick brown fox jumped over the lazy fox.].map { |s| s + " " }
 
   revisions << { d: revisions.join.length }
 
@@ -26,7 +23,13 @@ Dir.chdir(File.expand_path('../../../..', __FILE__)) do # rubocop:disable Discou
   while true
     rev = [revisions[i % revisions.length]]
     ver = SharedEditRevision.where(post_id: post_id).maximum(:version)
-    SharedEditRevision.revise!(post_id: post.id, user_id: 1, client_id: "a", revision: rev, version: ver)
+    SharedEditRevision.revise!(
+      post_id: post.id,
+      user_id: 1,
+      client_id: "a",
+      revision: rev,
+      version: ver,
+    )
     sleep(rand * 0.2 + 0.5)
     print "."
     i += 1

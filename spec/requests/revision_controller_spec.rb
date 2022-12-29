@@ -1,23 +1,15 @@
 # frozen_string_literal: true
-require 'rails_helper'
+require "rails_helper"
 
 describe ::DiscourseSharedEdits::RevisionController do
-  fab!(:post1) do
-    Fabricate(:post)
-  end
+  fab!(:post1) { Fabricate(:post) }
 
-  fab!(:admin) do
-    Fabricate(:admin)
-  end
+  fab!(:admin) { Fabricate(:admin) }
 
-  fab!(:user) do
-    Fabricate(:user)
-  end
+  fab!(:user) { Fabricate(:user) }
 
   context :admin do
-    before do
-      sign_in admin
-    end
+    before { sign_in admin }
 
     it "is hard disabled when plugin is disabled" do
       SiteSetting.shared_edits_enabled = false
@@ -26,7 +18,6 @@ describe ::DiscourseSharedEdits::RevisionController do
     end
 
     it "is able to enable revisions on a post" do
-
       put "/shared_edits/p/#{post1.id}/enable"
       expect(response.status).to eq(200)
 
@@ -48,9 +39,12 @@ describe ::DiscourseSharedEdits::RevisionController do
     end
 
     it "can submit edits on a post" do
-      put "/shared_edits/p/#{post1.id}", params: {
-        client_id: 'abc', version: 1, revision: [{ d: 4 }, "1234"].to_json
-      }
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            version: 1,
+            revision: [{ d: 4 }, "1234"].to_json,
+          }
       expect(response.status).to eq(200)
 
       SharedEditRevision.commit!(post1.id)
@@ -60,9 +54,12 @@ describe ::DiscourseSharedEdits::RevisionController do
     end
 
     it "can get the latest version" do
-      put "/shared_edits/p/#{post1.id}", params: {
-        client_id: 'abc', version: 1, revision: [{ d: 4 }, "1234"].to_json
-      }
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            version: 1,
+            revision: [{ d: 4 }, "1234"].to_json,
+          }
 
       get "/shared_edits/p/#{post1.id}"
       expect(response.status).to eq(200)
@@ -78,9 +75,12 @@ describe ::DiscourseSharedEdits::RevisionController do
       Discourse.redis.del SharedEditRevision.will_commit_key(post1.id)
 
       Sidekiq::Testing.inline! do
-        put "/shared_edits/p/#{post1.id}", params: {
-          client_id: 'abc', version: 1, revision: [{ d: 4 }, "1234"].to_json
-        }
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              version: 1,
+              revision: [{ d: 4 }, "1234"].to_json,
+            }
 
         get "/shared_edits/p/#{post1.id}"
         expect(response.status).to eq(200)
@@ -94,13 +94,19 @@ describe ::DiscourseSharedEdits::RevisionController do
     end
 
     it "can submit old edits to a post and get sane info" do
-      put "/shared_edits/p/#{post1.id}", params: {
-        client_id: 'abc', version: 1, revision: [{ d: 4 }, "1234"].to_json
-      }
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            version: 1,
+            revision: [{ d: 4 }, "1234"].to_json,
+          }
 
-      put "/shared_edits/p/#{post1.id}", params: {
-        client_id: '123', version: 1, revision: [4, { d: 4 }, "abcd"].to_json
-      }
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "123",
+            version: 1,
+            revision: [4, { d: 4 }, "abcd"].to_json,
+          }
       expect(response.status).to eq(200)
 
       SharedEditRevision.commit!(post1.id)
@@ -116,5 +122,4 @@ describe ::DiscourseSharedEdits::RevisionController do
       expect(response.status).to eq(403)
     end
   end
-
 end
