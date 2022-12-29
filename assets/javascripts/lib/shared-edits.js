@@ -179,7 +179,7 @@ const SharedEditManager = EmberObject.extend({
         "#reply-control textarea.d-editor-input"
       );
 
-      if (input.selectionStart) {
+      if (input.selectionStart || input.selectionStart === 0) {
         const selLength = input.selectionEnd - input.selectionStart;
 
         let position = otUnicode.transformPosition(
