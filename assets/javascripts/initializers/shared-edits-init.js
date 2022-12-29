@@ -90,7 +90,10 @@ function initWithApi(api) {
     html(attrs) {
       const contents = this._super(...arguments);
 
-      if (!this.currentUser.staff || !contents.children) {
+      if (
+        !(this.currentUser.staff || this.currentUser.trust_level > 3) ||
+        !contents.children
+      ) {
         return contents;
       }
 
