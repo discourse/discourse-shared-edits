@@ -1,20 +1,18 @@
 # frozen_string_literal: true
-require 'rails_helper'
+require "rails_helper"
 
 describe SharedEditRevision do
-
   def fake_edit(post, user_id, data, version:)
     SharedEditRevision.revise!(
       post_id: post.id,
       user_id: user_id,
       client_id: user_id,
       revision: data.to_json,
-      version: version
+      version: version,
     )
   end
 
   it "can resolve complex edits and notify" do
-
     raw = <<~RAW
       0123456
       0123456
@@ -29,11 +27,10 @@ describe SharedEditRevision do
 
     version, revision = nil
 
-    messages = MessageBus.track_publish("/shared_edits/#{post.id}") do
-      version, revision = fake_edit(
-        post, user1.id, [8, { d: 7 }, "mister"], version: 1
-      )
-    end
+    messages =
+      MessageBus.track_publish("/shared_edits/#{post.id}") do
+        version, revision = fake_edit(post, user1.id, [8, { d: 7 }, "mister"], version: 1)
+      end
 
     expected_rev = [8, { d: 7 }, "mister"].to_json
     expect(messages.length).to eq(1)
@@ -54,9 +51,7 @@ describe SharedEditRevision do
     post.reload
     expect(post.raw).to eq(new_raw)
 
-    version, revision = fake_edit(
-      post, user2.id, [{ d: 7 }, "hello"], version: 1
-    )
+    version, revision = fake_edit(post, user2.id, [{ d: 7 }, "hello"], version: 1)
 
     expect(version).to eq(3)
     expect(revision).to eq("[{\"d\":7},\"hello\"]")
@@ -87,10 +82,9 @@ describe SharedEditRevision do
     expect(reason).to include(user2.username)
     expect(reason).not_to include("d,")
 
-    edit_rev = SharedEditRevision.where(post_id: post.id).order('version desc').first
+    edit_rev = SharedEditRevision.where(post_id: post.id).order("version desc").first
 
     expect(edit_rev.post_revision_id).to eq(rev.id)
-
   end
 
   it "does not update the post if validation fails" do
