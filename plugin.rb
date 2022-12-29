@@ -40,7 +40,8 @@ after_initialize do
 
   class ::Guardian
     def can_toggle_shared_edits?
-      SiteSetting.shared_edits_enabled && authenticated? && (is_staff? || @user.has_trust_level?(TrustLevel[4]))
+      SiteSetting.shared_edits_enabled && authenticated? &&
+        (is_staff? || @user.has_trust_level?(TrustLevel[4]))
     end
   end
 
