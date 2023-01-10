@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 tr_TR:
+  shared_edits:
+    reason: "Düzenleyen: %{users}"
+  site_settings:
+    shared_edits_enabled: Belirlenen gönderilerde paylaşılan, iş birliğine dayalı düzenlemeyi etkinleştirin.

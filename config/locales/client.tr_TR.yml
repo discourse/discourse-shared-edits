@@ -5,3 +5,10 @@
 # https://translate.discourse.org/
 
 tr_TR:
+  js:
+    shared_edits:
+      enable_shared_edits: "Paylaşılan Düzenlemeleri Etkinleştir"
+      disable_shared_edits: "Paylaşılan Düzenlemeleri Devre Dışı Bırak"
+      edit: "Düzenle"
+      button_title: "Gönderiyi İş Birliği İçinde Düzenleyin"
+      done: "Tamamlandı"
