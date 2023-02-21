@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 th:
+  js:
+    shared_edits:
+      edit: "แก้ไข"
+      done: "เสร็จ"

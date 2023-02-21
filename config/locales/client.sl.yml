@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 sl:
+  js:
+    shared_edits:
+      edit: "Uredi"
+      done: "Končano"

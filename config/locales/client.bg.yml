@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 bg:
+  js:
+    shared_edits:
+      edit: "Редактирай"
+      done: "Готово"

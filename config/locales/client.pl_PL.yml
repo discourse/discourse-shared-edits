@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 pl_PL:
+  js:
+    shared_edits:
+      edit: "Edytuj"
+      done: "Zrobione"

@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 cs:
+  js:
+    shared_edits:
+      edit: "Upravit"
+      done: "Hotovo"

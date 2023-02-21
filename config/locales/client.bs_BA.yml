@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 bs_BA:
+  js:
+    shared_edits:
+      edit: "Edit"
+      done: "Urađeno"

@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 hy:
+  js:
+    shared_edits:
+      edit: "Խմբագրել"
+      done: "Կատարված է"

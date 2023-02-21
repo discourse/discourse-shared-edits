@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 vi:
+  js:
+    shared_edits:
+      edit: "Sửa"
+      done: "Hoàn tất"

@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 sk:
+  js:
+    shared_edits:
+      edit: "Upraviť"
+      done: "Hotovo"

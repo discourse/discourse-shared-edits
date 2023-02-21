@@ -5,3 +5,6 @@
 # https://translate.discourse.org/
 
 id:
+  js:
+    shared_edits:
+      edit: "Ubah"

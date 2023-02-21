@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 zh_TW:
+  js:
+    shared_edits:
+      edit: "編輯"
+      done: "完成"

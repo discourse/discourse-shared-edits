@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 nb_NO:
+  js:
+    shared_edits:
+      edit: "Endre"
+      done: "Ferdig"

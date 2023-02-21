@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 te:
+  js:
+    shared_edits:
+      edit: "సవరణ"
+      done: "పూర్తయింది"

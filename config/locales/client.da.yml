@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 da:
+  js:
+    shared_edits:
+      edit: "Rediger"
+      done: "Færdig"
