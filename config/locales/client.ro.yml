@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 ro:
+  js:
+    shared_edits:
+      edit: "Modifică"
+      done: "Terminat"

@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 ko:
+  js:
+    shared_edits:
+      edit: "편집"
+      done: "완료"

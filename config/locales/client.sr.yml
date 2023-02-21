@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 sr:
+  js:
+    shared_edits:
+      edit: "Izmeni"
+      done: "Gotovo"

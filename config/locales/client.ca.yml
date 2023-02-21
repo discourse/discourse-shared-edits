@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 ca:
+  js:
+    shared_edits:
+      edit: "Edita"
+      done: "Fet"

@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 lt:
+  js:
+    shared_edits:
+      edit: "Redaguoti"
+      done: "Baigta"

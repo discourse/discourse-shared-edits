@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 be:
+  js:
+    shared_edits:
+      edit: "рэдагаваць"
+      done: "Выканана"

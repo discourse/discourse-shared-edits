@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 fa_IR:
+  js:
+    shared_edits:
+      edit: "ویرایش"
+      done: "انجام شد"

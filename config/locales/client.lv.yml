@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 lv:
+  js:
+    shared_edits:
+      edit: "Rediģēt"
+      done: "Pabeigt"

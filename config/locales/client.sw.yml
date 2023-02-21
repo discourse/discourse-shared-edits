@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 sw:
+  js:
+    shared_edits:
+      edit: "Hariri"
+      done: "Imekwisha"
