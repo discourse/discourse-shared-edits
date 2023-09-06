@@ -47,7 +47,7 @@ function initWithApi(api) {
           }.json`;
 
           await ajax(url, { type: "PUT" })
-            .then((result) => {
+            .then(() => {
               post.set(
                 "shared_edits_enabled",
                 post.shared_edits_enabled ? false : true
