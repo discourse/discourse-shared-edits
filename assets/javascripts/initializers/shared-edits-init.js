@@ -41,19 +41,17 @@ function initWithApi(api) {
         label: attrs.shared_edits_enabled
           ? "shared_edits.disable_shared_edits"
           : "shared_edits.enable_shared_edits",
-        action: (post, rerender) => {
+        action: async (post) => {
           let url = `/shared_edits/p/${post.id}/${
             post.shared_edits_enabled ? "disable" : "enable"
           }.json`;
 
-          ajax(url, { type: "PUT" })
-            .then(() => {
+          await ajax(url, { type: "PUT" })
+            .then((result) => {
               post.set(
                 "shared_edits_enabled",
                 post.shared_edits_enabled ? false : true
               );
-
-              rerender();
             })
             .catch(popupAjaxError);
         },
