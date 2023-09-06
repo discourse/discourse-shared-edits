@@ -27,6 +27,81 @@ function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil-alt";
 
+  const currentUser = api.getCurrentUser();
+
+  if (api.addPostAdminMenuButton) {
+    api.addPostAdminMenuButton((attrs) => {
+      if (!currentUser?.staff) {
+        return;
+      }
+
+      return {
+        icon: "far-edit",
+        className: "admin-collude",
+        label: attrs.shared_edits_enabled
+          ? "shared_edits.disable_shared_edits"
+          : "shared_edits.enable_shared_edits",
+        action: (post, rerender) => {
+          let url = `/shared_edits/p/${post.id}/${
+            post.shared_edits_enabled ? "disable" : "enable"
+          }.json`;
+
+          ajax(url, { type: "PUT" })
+            .then(() => {
+              post.set(
+                "shared_edits_enabled",
+                post.shared_edits_enabled ? false : true
+              );
+
+              rerender();
+            })
+            .catch(popupAjaxError);
+        },
+      };
+    });
+  } else {
+    api.reopenWidget("post-admin-menu", {
+      html(attrs) {
+        const contents = this._super(...arguments);
+
+        if (!this.currentUser.staff || !contents.children) {
+          return contents;
+        }
+
+        contents.children.push(
+          this.attach("post-admin-menu-button", {
+            action: "toggleSharedEdit",
+            icon: "far-edit",
+            className: "admin-collude",
+            label: attrs.shared_edits_enabled
+              ? "shared_edits.disable_shared_edits"
+              : "shared_edits.enable_shared_edits",
+          })
+        );
+
+        return contents;
+      },
+
+      toggleSharedEdit() {
+        const post = this.findAncestorModel();
+
+        let url = `/shared_edits/p/${post.id}/${
+          post.shared_edits_enabled ? "disable" : "enable"
+        }.json`;
+
+        ajax(url, { type: "PUT" })
+          .then(() => {
+            post.set(
+              "shared_edits_enabled",
+              post.shared_edits_enabled ? false : true
+            );
+            this.scheduleRerender();
+          })
+          .catch(popupAjaxError);
+      },
+    });
+  }
+
   api.includePostAttributes("shared_edits_enabled");
 
   api.addPostClassesCallback((attrs) => {
@@ -83,50 +158,6 @@ function initWithApi(api) {
     sharedEdit() {
       const post = this.findAncestorModel();
       this.appEvents.trigger("shared-edit-on-post", post);
-    },
-  });
-
-  api.reopenWidget("post-admin-menu", {
-    html(attrs) {
-      const contents = this._super(...arguments);
-
-      if (
-        !(this.currentUser.staff || this.currentUser.trust_level > 3) ||
-        !contents.children
-      ) {
-        return contents;
-      }
-
-      contents.children.push(
-        this.attach("post-admin-menu-button", {
-          action: "toggleSharedEdit",
-          icon: "far-edit",
-          className: "admin-collude",
-          label: attrs.shared_edits_enabled
-            ? "shared_edits.disable_shared_edits"
-            : "shared_edits.enable_shared_edits",
-        })
-      );
-
-      return contents;
-    },
-
-    toggleSharedEdit() {
-      const post = this.findAncestorModel();
-
-      let url = `/shared_edits/p/${post.id}/${
-        post.shared_edits_enabled ? "disable" : "enable"
-      }.json`;
-
-      ajax(url, { type: "PUT" })
-        .then(() => {
-          post.set(
-            "shared_edits_enabled",
-            post.shared_edits_enabled ? false : true
-          );
-          this.scheduleRerender();
-        })
-        .catch(popupAjaxError);
     },
   });
 
