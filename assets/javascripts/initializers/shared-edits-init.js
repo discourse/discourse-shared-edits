@@ -31,7 +31,7 @@ function initWithApi(api) {
 
   if (api.addPostAdminMenuButton) {
     api.addPostAdminMenuButton((attrs) => {
-      if (!currentUser?.staff) {
+      if (!currentUser?.staff && currentUser?.trust_level < 4) {
         return;
       }
 
