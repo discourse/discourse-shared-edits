@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # name: discourse-shared-edits
-# about: Edit posts collaboratively in Discourse
+# about: Allows multiple users to collaboratively edit posts in real time.
+# meta_topic_id: 167583
 # version: 0.1.0
 # authors: Sam Saffron
 # url: https://github.com/discourse/discourse-shared-edits
