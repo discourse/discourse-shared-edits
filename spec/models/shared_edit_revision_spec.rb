@@ -99,7 +99,8 @@ describe SharedEditRevision do
       revision: [{ d: 11 }, "Test"],
       version: 1,
     )
-    SharedEditRevision.commit!(post.id)
+
+    expect { SharedEditRevision.commit!(post.id) }.to raise_error(ActiveRecord::RecordInvalid)
 
     expect(post.reload.raw).to eq("Hello world")
   end
