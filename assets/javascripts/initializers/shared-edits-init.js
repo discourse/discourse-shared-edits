@@ -1,4 +1,8 @@
+import { equal } from "@ember/object/computed";
+import { ajax } from "discourse/lib/ajax";
+import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
+import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 import discourseComputed, {
   observes,
   on,
@@ -8,10 +12,6 @@ import {
   setupSharedEdit,
   teardownSharedEdit,
 } from "../lib/shared-edits";
-import { ajax } from "discourse/lib/ajax";
-import { popupAjaxError } from "discourse/lib/ajax-error";
-import { equal } from "@ember/object/computed";
-import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 const PLUGIN_ID = "discourse-shared-edits";
@@ -295,7 +295,7 @@ function initWithApi(api) {
 export default {
   name: "discourse-shared-edits",
   initialize: (container) => {
-    const siteSettings = container.lookup("site-settings:main");
+    const siteSettings = container.lookup("service:site-settings");
     if (!siteSettings.shared_edits_enabled) {
       return;
     }
