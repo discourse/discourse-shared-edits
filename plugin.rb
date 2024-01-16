@@ -6,7 +6,6 @@
 # version: 0.1.0
 # authors: Sam Saffron
 # url: https://github.com/discourse/discourse-shared-edits
-# transpile_js: true
 
 enabled_site_setting :shared_edits_enabled
 

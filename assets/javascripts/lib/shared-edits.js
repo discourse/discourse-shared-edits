@@ -1,8 +1,8 @@
-import { ajax } from "discourse/lib/ajax";
 import EmberObject from "@ember/object";
+import { throttle } from "@ember/runloop";
+import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import loadScript from "discourse/lib/load-script";
-import { throttle } from "@ember/runloop";
 
 const THROTTLE_SAVE = 500;
 
