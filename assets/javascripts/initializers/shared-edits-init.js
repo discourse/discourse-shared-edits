@@ -234,7 +234,7 @@ function initWithApi(api) {
     },
   });
 
-  api.modifyClass("controller:composer", {
+  api.modifyClass("service:composer", {
     pluginId: PLUGIN_ID,
 
     open(opts) {
