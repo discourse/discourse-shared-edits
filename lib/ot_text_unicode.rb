@@ -8,8 +8,7 @@ module OtTextUnicode
       return @context if @context
       context = MiniRacer::Context.new
       context.eval("module = {exports: {}}")
-      ot_path =
-        File.expand_path("../../support/text-unicode-webpack/dist/text-unicode-dist.js", __FILE__)
+      ot_path = File.expand_path("../../public/javascripts/text-unicode-dist.js", __FILE__)
 
       context.eval("window = {}; #{File.read(ot_path)}; ot = window.otLib.default.OtUnicode")
 
