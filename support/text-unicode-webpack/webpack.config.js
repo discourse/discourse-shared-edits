@@ -4,7 +4,7 @@ module.exports = {
   entry: './src/index.js',
   mode: 'production',
   output: {
-    path: path.resolve(__dirname, 'dist'),
+    path: path.resolve(__dirname, '..', '..', 'public', 'javascripts'),
     filename: 'text-unicode-dist.js',
     library: 'otLib',
     libraryTarget: 'umd'
