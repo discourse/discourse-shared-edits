@@ -7,6 +7,7 @@ module.exports = {
     filename: "text-unicode-dist.js",
     library: "otLib",
     libraryTarget: "umd",
+    globalObject: "window",
   },
   module: {
     rules: [
