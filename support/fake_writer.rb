@@ -7,7 +7,7 @@ Dir.chdir(File.expand_path("../../../..", __FILE__)) do # rubocop:disable Discou
   post_id = ARGV[0].to_i
 
   if post_id == 0
-    STDERR.puts "Please specify a product id"
+    STDERR.puts "Please specify a post id"
     exit 1
   end
 

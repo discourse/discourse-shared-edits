@@ -1,20 +1,20 @@
-const path = require('path');
+const path = require("path");
 
 module.exports = {
-  entry: './src/index.js',
-  mode: 'production',
+  mode: "production",
   output: {
-    path: path.resolve(__dirname, 'dist'),
-    filename: 'text-unicode-dist.js',
-    library: 'otLib',
-    libraryTarget: 'umd'
+    path: path.resolve(__dirname, "..", "..", "public", "javascripts"),
+    filename: "text-unicode-dist.js",
+    library: "otLib",
+    libraryTarget: "umd",
+    globalObject: "window",
   },
   module: {
     rules: [
       {
         test: /\.js$/,
-        use: [{ loader: 'babel-loader'}]
-      }
-    ]
-  }
+        use: { loader: "babel-loader" },
+      },
+    ],
+  },
 };
