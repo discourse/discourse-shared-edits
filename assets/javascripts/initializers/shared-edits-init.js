@@ -3,15 +3,7 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
-import discourseComputed, {
-  observes,
-  on,
-} from "discourse-common/utils/decorators";
-import {
-  performSharedEdit,
-  setupSharedEdit,
-  teardownSharedEdit,
-} from "../lib/shared-edits";
+import discourseComputed, { on } from "discourse-common/utils/decorators";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 const PLUGIN_ID = "discourse-shared-edits";
