@@ -22,33 +22,30 @@ export default {
       api.modifyClass("service:composer", {
         pluginId: PLUGIN_ID,
 
-        open(opts) {
-          const openResponse = this._super(opts);
-          if (openResponse && openResponse.then) {
-            return openResponse.then(() => {
-              if (opts.action === SHARED_EDIT_ACTION) {
-                setupSharedEdit(this.model);
-              }
-            });
+        async open(opts) {
+          await this._super(opts);
+
+          if (opts.action === SHARED_EDIT_ACTION) {
+            setupSharedEdit(this.model);
           }
         },
 
         collapse() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
+          if (this.model.action === SHARED_EDIT_ACTION) {
             return this.close();
           }
           return this._super();
         },
 
         close() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
+          if (this.model.action === SHARED_EDIT_ACTION) {
             teardownSharedEdit(this.model);
           }
           return this._super();
         },
 
         save() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
+          if (this.model.action === SHARED_EDIT_ACTION) {
             return this.close();
           }
           return this._super.apply(this, arguments);
@@ -56,20 +53,18 @@ export default {
 
         @on("init")
         _listenForClose() {
-          this.appEvents.on("composer:close", () => {
-            this.close();
-          });
+          this.appEvents.on("composer:close", () => this.close());
         },
 
         @observes("model.reply")
         _handleSharedEdit() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
+          if (this.model.action === SHARED_EDIT_ACTION) {
             performSharedEdit(this.model);
           }
         },
 
         _saveDraft() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
+          if (this.model.action === SHARED_EDIT_ACTION) {
             return;
           }
           return this._super();
