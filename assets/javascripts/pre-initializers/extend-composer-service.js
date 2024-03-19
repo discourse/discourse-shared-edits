@@ -31,21 +31,21 @@ export default {
         },
 
         collapse() {
-          if (this.model.action === SHARED_EDIT_ACTION) {
+          if (this.get("model.action") === SHARED_EDIT_ACTION) {
             return this.close();
           }
           return this._super();
         },
 
         close() {
-          if (this.model.action === SHARED_EDIT_ACTION) {
+          if (this.get("model.action") === SHARED_EDIT_ACTION) {
             teardownSharedEdit(this.model);
           }
           return this._super();
         },
 
         save() {
-          if (this.model.action === SHARED_EDIT_ACTION) {
+          if (this.get("model.action") === SHARED_EDIT_ACTION) {
             return this.close();
           }
           return this._super.apply(this, arguments);
@@ -58,13 +58,13 @@ export default {
 
         @observes("model.reply")
         _handleSharedEdit() {
-          if (this.model.action === SHARED_EDIT_ACTION) {
+          if (this.get("model.action") === SHARED_EDIT_ACTION) {
             performSharedEdit(this.model);
           }
         },
 
         _saveDraft() {
-          if (this.model.action === SHARED_EDIT_ACTION) {
+          if (this.get("model.action") === SHARED_EDIT_ACTION) {
             return;
           }
           return this._super();
