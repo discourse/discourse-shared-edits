@@ -3,15 +3,7 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
-import discourseComputed, {
-  observes,
-  on,
-} from "discourse-common/utils/decorators";
-import {
-  performSharedEdit,
-  setupSharedEdit,
-  teardownSharedEdit,
-} from "../lib/shared-edits";
+import discourseComputed, { on } from "discourse-common/utils/decorators";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 const PLUGIN_ID = "discourse-shared-edits";
@@ -231,63 +223,6 @@ function initWithApi(api) {
         "_handleSharedEditOnPost"
       );
       this._super(...arguments);
-    },
-  });
-
-  api.modifyClass("service:composer", {
-    pluginId: PLUGIN_ID,
-
-    open(opts) {
-      const openResponse = this._super(opts);
-      if (openResponse && openResponse.then) {
-        return openResponse.then(() => {
-          if (opts.action === SHARED_EDIT_ACTION) {
-            setupSharedEdit(this.model);
-          }
-        });
-      }
-    },
-
-    collapse() {
-      if (this.get("model.action") === SHARED_EDIT_ACTION) {
-        return this.close();
-      }
-      return this._super();
-    },
-
-    close() {
-      if (this.get("model.action") === SHARED_EDIT_ACTION) {
-        teardownSharedEdit(this.model);
-      }
-      return this._super();
-    },
-
-    save() {
-      if (this.get("model.action") === SHARED_EDIT_ACTION) {
-        return this.close();
-      }
-      return this._super.apply(this, arguments);
-    },
-
-    @on("init")
-    _listenForClose() {
-      this.appEvents.on("composer:close", () => {
-        this.close();
-      });
-    },
-
-    @observes("model.reply")
-    _handleSharedEdit() {
-      if (this.get("model.action") === SHARED_EDIT_ACTION) {
-        performSharedEdit(this.model);
-      }
-    },
-
-    _saveDraft() {
-      if (this.get("model.action") === SHARED_EDIT_ACTION) {
-        return;
-      }
-      return this._super();
     },
   });
 }
