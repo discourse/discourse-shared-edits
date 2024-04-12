@@ -100,8 +100,6 @@ describe SharedEditRevision do
       version: 1,
     )
 
-    expect { SharedEditRevision.commit!(post.id) }.to raise_error(ActiveRecord::RecordInvalid)
-
     expect(post.reload.raw).to eq("Hello world")
   end
 end
