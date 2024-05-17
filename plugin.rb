@@ -14,19 +14,19 @@ register_asset "stylesheets/common/discourse-shared-edits.scss"
 after_initialize do
   module ::DiscourseSharedEdits
     SHARED_EDITS_ENABLED = "shared_edits_enabled"
+    PLUGIN_NAME = "discourse-shared-edits"
 
     class Engine < ::Rails::Engine
-      engine_name "discourse_shared_edits"
+      engine_name PLUGIN_NAME
       isolate_namespace ::DiscourseSharedEdits
     end
   end
 
-  %w[
-    ../lib/ot_text_unicode.rb
-    ../app/models/shared_edit_revision.rb
-    ../app/controllers/discourse_shared_edits/revision_controller.rb
-    ../app/jobs/commit_shared_revision.rb
-  ].each { |path| require File.expand_path(path, __FILE__) }
+  require_relative "lib/ot_text_unicode"
+  require_relative "app/models/shared_edit_revision"
+  require_relative "app/controllers/discourse_shared_edits/revision_controller"
+  require_relative "app/jobs/commit_shared_revision"
+  require_relative "lib/discourse_shared_edits/guardian_extension"
 
   ::DiscourseSharedEdits::Engine.routes.draw do
     put "/p/:post_id/enable" => "revision#enable"
@@ -38,12 +38,7 @@ after_initialize do
 
   Discourse::Application.routes.append { mount ::DiscourseSharedEdits::Engine, at: "/shared_edits" }
 
-  class ::Guardian
-    def can_toggle_shared_edits?
-      SiteSetting.shared_edits_enabled && authenticated? &&
-        (is_staff? || @user.has_trust_level?(TrustLevel[4]))
-    end
-  end
+  reloadable_patch { Guardian.prepend(DiscourseSharedEdits::GuardianExtension) }
 
   register_post_custom_field_type(DiscourseSharedEdits::SHARED_EDITS_ENABLED, :boolean)
   topic_view_post_custom_fields_allowlister { [DiscourseSharedEdits::SHARED_EDITS_ENABLED] }
