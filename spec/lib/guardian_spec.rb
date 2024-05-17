@@ -2,8 +2,8 @@
 require "rails_helper"
 
 describe ::Guardian do
-  fab!(:moderator) { Fabricate(:moderator) }
-  fab!(:user) { Fabricate(:user) }
+  fab!(:moderator)
+  fab!(:user)
 
   it "disallows shared edits from anon" do
     expect(Guardian.new.can_toggle_shared_edits?).to eq(false)

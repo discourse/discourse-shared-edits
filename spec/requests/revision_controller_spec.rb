@@ -3,10 +3,8 @@ require "rails_helper"
 
 describe ::DiscourseSharedEdits::RevisionController do
   fab!(:post1) { Fabricate(:post) }
-
-  fab!(:admin) { Fabricate(:admin) }
-
-  fab!(:user) { Fabricate(:user) }
+  fab!(:admin)
+  fab!(:user)
 
   context :admin do
     before { sign_in admin }
@@ -14,7 +12,7 @@ describe ::DiscourseSharedEdits::RevisionController do
     it "is hard disabled when plugin is disabled" do
       SiteSetting.shared_edits_enabled = false
       put "/shared_edits/p/#{post1.id}/enable"
-      expect(response.status).to eq(403)
+      expect(response.status).to eq(404)
     end
 
     it "is able to enable revisions on a post" do

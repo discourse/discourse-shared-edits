@@ -2,6 +2,8 @@
 
 module ::DiscourseSharedEdits
   class RevisionController < ::ApplicationController
+    requires_plugin PLUGIN_NAME
+
     requires_login
     before_action :ensure_logged_in, :ensure_shared_edits
     skip_before_action :preload_json, :check_xhr

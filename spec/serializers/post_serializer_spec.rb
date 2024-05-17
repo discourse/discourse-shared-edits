@@ -3,7 +3,7 @@
 require "rails_helper"
 
 describe PostSerializer do
-  fab!(:post) { Fabricate(:post) }
+  fab!(:post)
 
   before { SiteSetting.shared_edits_enabled }
 
