@@ -1,12 +1,10 @@
-import { equal } from "@ember/object/computed";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
-import discourseComputed, { on } from "discourse-common/utils/decorators";
+import { on } from "discourse-common/utils/decorators";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
-const PLUGIN_ID = "discourse-shared-edits";
 
 function replaceButton(buttons, find, replace) {
   const idx = buttons.indexOf(find);
@@ -151,80 +149,78 @@ function initWithApi(api) {
     },
   });
 
-  api.modifyClass("component:scrolling-post-stream", {
-    pluginId: PLUGIN_ID,
-
-    sharedEdit() {
-      this.appEvents.trigger("shared-edit-on-post");
-    },
-  });
-
-  api.modifyClass("model:composer", {
-    pluginId: PLUGIN_ID,
-
-    creatingSharedEdit: equal("action", SHARED_EDIT_ACTION),
-
-    @discourseComputed("action")
-    editingPost() {
-      return this._super(...arguments) || this.creatingSharedEdit;
-    },
-  });
-
-  api.modifyClass("component:composer-presence-display", {
-    pluginId: PLUGIN_ID,
-
-    _typing() {
-      if (this.model.action === SHARED_EDIT_ACTION) {
-        const lastKey = this.model.lastKeyPress;
-        if (!lastKey || lastKey < Date.now() - 2000) {
-          return;
+  api.modifyClass(
+    "component:scrolling-post-stream",
+    (Superclass) =>
+      class extends Superclass {
+        sharedEdit() {
+          this.appEvents.trigger("shared-edit-on-post");
         }
       }
-      this._super(...arguments);
-    },
-  });
+  );
 
-  api.modifyClass("component:composer-editor", {
-    pluginId: PLUGIN_ID,
+  api.modifyClass(
+    "model:composer",
+    (Superclass) =>
+      class extends Superclass {
+        get creatingSharedEdit() {
+          return this.get("action") === SHARED_EDIT_ACTION;
+        }
 
-    @on("keyDown")
-    _trackTyping() {
-      if (this.composer.action === SHARED_EDIT_ACTION) {
-        this.composer.set("lastKeyPress", Date.now());
+        get editingPost() {
+          return super.editingPost || this.creatingSharedEdit;
+        }
       }
-    },
-  });
+  );
 
-  api.modifyClass("controller:topic", {
-    pluginId: PLUGIN_ID,
+  api.modifyClass(
+    "component:composer-editor",
+    (Superclass) =>
+      class extends Superclass {
+        @on("keyDown")
+        _trackTyping() {
+          if (this.composer.action === SHARED_EDIT_ACTION) {
+            this.composer.set("lastKeyPress", Date.now());
+          }
+        }
+      }
+  );
 
-    init() {
-      this._super(...arguments);
+  api.modifyClass(
+    "controller:topic",
+    (Superclass) =>
+      class extends Superclass {
+        init() {
+          super.init(...arguments);
 
-      this.appEvents.on("shared-edit-on-post", this, "_handleSharedEditOnPost");
-    },
+          this.appEvents.on(
+            "shared-edit-on-post",
+            this,
+            "_handleSharedEditOnPost"
+          );
+        }
 
-    _handleSharedEditOnPost(post) {
-      const draftKey = post.get("topic.draft_key");
-      const draftSequence = post.get("topic.draft_sequence");
+        willDestroy() {
+          super.willDestroy(...arguments);
+          this.appEvents.off(
+            "shared-edit-on-post",
+            this,
+            "_handleSharedEditOnPost"
+          );
+        }
+        _handleSharedEditOnPost(post) {
+          const draftKey = post.get("topic.draft_key");
+          const draftSequence = post.get("topic.draft_sequence");
 
-      this.get("composer").open({
-        post,
-        action: SHARED_EDIT_ACTION,
-        draftKey,
-        draftSequence,
-      });
-    },
-
-    willDestroy() {
-      this.appEvents.off(
-        "shared-edit-on-post",
-        this,
-        "_handleSharedEditOnPost"
-      );
-      this._super(...arguments);
-    },
-  });
+          this.get("composer").open({
+            post,
+            action: SHARED_EDIT_ACTION,
+            draftKey,
+            draftSequence,
+          });
+        }
+      }
+  );
 }
 
 export default {
