@@ -1,7 +1,6 @@
 # frozen_string_literal: true
-require "rails_helper"
 
-describe SharedEditRevision do
+RSpec.describe SharedEditRevision do
   def fake_edit(post, user_id, data, version:)
     SharedEditRevision.revise!(
       post_id: post.id,

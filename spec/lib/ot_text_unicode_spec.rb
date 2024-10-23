@@ -1,7 +1,6 @@
 # frozen_string_literal: true
-require "rails_helper"
 
-describe OtTextUnicode do
+RSpec.describe OtTextUnicode do
   it "can apply operations to text" do
     result = OtTextUnicode.apply("😎hello world", [7, { d: 9 }, "hello"])
     expect(result).to eq("😎hello hello")

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
-require "rails_helper"
 
-describe ::Guardian do
+RSpec.describe Guardian do
   fab!(:moderator)
   fab!(:user)
 
