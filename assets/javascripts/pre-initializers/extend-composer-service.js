@@ -7,7 +7,6 @@ import {
 } from "../lib/shared-edits";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
-const PLUGIN_ID = "discourse-shared-edits";
 
 export default {
   name: "discourse-shared-edits-composer-service",
@@ -19,57 +18,59 @@ export default {
     }
 
     withPluginApi("0.8.6", (api) => {
-      api.modifyClass("service:composer", {
-        pluginId: PLUGIN_ID,
+      api.modifyClass(
+        "service:composer",
+        (Superclass) =>
+          class extends Superclass {
+            async open(opts) {
+              await super.open(...arguments);
 
-        async open(opts) {
-          await this._super(opts);
+              if (opts.action === SHARED_EDIT_ACTION) {
+                setupSharedEdit(this.model);
+              }
+            }
 
-          if (opts.action === SHARED_EDIT_ACTION) {
-            setupSharedEdit(this.model);
+            collapse() {
+              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+                return this.close();
+              }
+              return super.collapse(...arguments);
+            }
+
+            close() {
+              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+                teardownSharedEdit(this.model);
+              }
+              return super.close(...arguments);
+            }
+
+            save() {
+              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+                return this.close();
+              }
+              return super.save(...arguments);
+            }
+
+            @on("init")
+            _listenForClose() {
+              this.appEvents.on("composer:close", () => this.close());
+            }
+
+            @observes("model.reply")
+            _handleSharedEdit() {
+              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+                performSharedEdit(this.model);
+              }
+            }
+
+            _saveDraft() {
+              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+                return;
+              }
+              return super._saveDraft(...arguments);
+            }
           }
-        },
-
-        collapse() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
-            return this.close();
-          }
-          return this._super();
-        },
-
-        close() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
-            teardownSharedEdit(this.model);
-          }
-          return this._super();
-        },
-
-        save() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
-            return this.close();
-          }
-          return this._super.apply(this, arguments);
-        },
-
-        @on("init")
-        _listenForClose() {
-          this.appEvents.on("composer:close", () => this.close());
-        },
-
-        @observes("model.reply")
-        _handleSharedEdit() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
-            performSharedEdit(this.model);
-          }
-        },
-
-        _saveDraft() {
-          if (this.get("model.action") === SHARED_EDIT_ACTION) {
-            return;
-          }
-          return this._super();
-        },
-      });
+      );
     });
   },
 };
