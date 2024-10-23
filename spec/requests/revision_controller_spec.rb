@@ -1,7 +1,6 @@
 # frozen_string_literal: true
-require "rails_helper"
 
-describe ::DiscourseSharedEdits::RevisionController do
+RSpec.describe DiscourseSharedEdits::RevisionController do
   fab!(:post1) { Fabricate(:post) }
   fab!(:admin)
   fab!(:user)

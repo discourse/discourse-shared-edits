@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
-require "rails_helper"
-
-describe PostSerializer do
+RSpec.describe PostSerializer do
   fab!(:post)
 
   before { SiteSetting.shared_edits_enabled }
@@ -13,13 +11,13 @@ describe PostSerializer do
       post.save_custom_fields
     end
 
-    it "should return the right value when shared edits exists for a post" do
+    it "returns the right value when shared edits exists for a post" do
       payload = PostSerializer.new(post, scope: Guardian.new, root: false).as_json
 
       expect(payload[:shared_edits_enabled]).to eq(true)
     end
 
-    it "should return the right value when shared edits exists in the topic view context" do
+    it "returns the right value when shared edits exists in the topic view context" do
       serializer = PostSerializer.new(post, scope: Guardian.new, root: false)
       serializer.topic_view = TopicView.new(post.topic)
 
