@@ -213,3 +213,23 @@ end
 # t.integer :user_id, null: false
 # t.integer :version, null: false
 # t.integer :post_revision
+
+# == Schema Information
+#
+# Table name: shared_edit_revisions
+#
+#  id               :bigint           not null, primary key
+#  post_id          :integer          not null
+#  raw              :string
+#  revision         :string           not null
+#  user_id          :integer          not null
+#  client_id        :string           not null
+#  version          :integer          not null
+#  post_revision_id :integer
+#  created_at       :datetime         not null
+#  updated_at       :datetime         not null
+#
+# Indexes
+#
+#  index_shared_edit_revisions_on_post_id_and_version  (post_id,version) UNIQUE
+#
