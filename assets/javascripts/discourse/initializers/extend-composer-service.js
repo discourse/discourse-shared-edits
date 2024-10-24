@@ -1,5 +1,4 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { observes, on } from "discourse-common/utils/decorators";
 import {
   performSharedEdit,
   setupSharedEdit,
@@ -22,6 +21,22 @@ export default {
         "service:composer",
         (Superclass) =>
           class extends Superclass {
+            init() {
+              super.init(...arguments);
+              this.addObserver("model.reply", this, this._handleSharedEdit);
+            }
+
+            willDestroy() {
+              super.willDestroy(...arguments);
+              this.removeObserver("model.reply", this, this._handleSharedEdit);
+            }
+
+            _handleSharedEdit() {
+              if (this.model?.action === SHARED_EDIT_ACTION) {
+                performSharedEdit(this.model);
+              }
+            }
+
             async open(opts) {
               await super.open(...arguments);
 
@@ -31,40 +46,28 @@ export default {
             }
 
             collapse() {
-              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+              if (this.model?.action === SHARED_EDIT_ACTION) {
                 return this.close();
               }
               return super.collapse(...arguments);
             }
 
             close() {
-              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+              if (this.model?.action === SHARED_EDIT_ACTION) {
                 teardownSharedEdit(this.model);
               }
               return super.close(...arguments);
             }
 
             save() {
-              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+              if (this.model?.action === SHARED_EDIT_ACTION) {
                 return this.close();
               }
               return super.save(...arguments);
             }
 
-            @on("init")
-            _listenForClose() {
-              this.appEvents.on("composer:close", () => this.close());
-            }
-
-            @observes("model.reply")
-            _handleSharedEdit() {
-              if (this.get("model.action") === SHARED_EDIT_ACTION) {
-                performSharedEdit(this.model);
-              }
-            }
-
             _saveDraft() {
-              if (this.get("model.action") === SHARED_EDIT_ACTION) {
+              if (this.model?.action === SHARED_EDIT_ACTION) {
                 return;
               }
               return super._saveDraft(...arguments);
