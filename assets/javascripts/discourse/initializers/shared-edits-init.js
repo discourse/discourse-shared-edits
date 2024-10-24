@@ -2,7 +2,6 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
-import { on } from "discourse-common/utils/decorators";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 
@@ -27,7 +26,7 @@ function initWithApi(api) {
 
       return {
         icon: "far-edit",
-        className: "admin-collude",
+        className: "admin-toggle-shared-edits",
         label: attrs.shared_edits_enabled
           ? "shared_edits.disable_shared_edits"
           : "shared_edits.enable_shared_edits",
@@ -60,7 +59,7 @@ function initWithApi(api) {
           this.attach("post-admin-menu-button", {
             action: "toggleSharedEdit",
             icon: "far-edit",
-            className: "admin-collude",
+            className: "admin-toggle-shared-edits",
             label: attrs.shared_edits_enabled
               ? "shared_edits.disable_shared_edits"
               : "shared_edits.enable_shared_edits",
@@ -177,8 +176,8 @@ function initWithApi(api) {
     "component:composer-editor",
     (Superclass) =>
       class extends Superclass {
-        @on("keyDown")
-        _trackTyping() {
+        keyDown() {
+          super.keyDown?.(...arguments);
           if (this.composer.action === SHARED_EDIT_ACTION) {
             this.composer.set("lastKeyPress", Date.now());
           }
@@ -196,7 +195,7 @@ function initWithApi(api) {
           this.appEvents.on(
             "shared-edit-on-post",
             this,
-            "_handleSharedEditOnPost"
+            this._handleSharedEditOnPost
           );
         }
 
@@ -205,9 +204,10 @@ function initWithApi(api) {
           this.appEvents.off(
             "shared-edit-on-post",
             this,
-            "_handleSharedEditOnPost"
+            this._handleSharedEditOnPost
           );
         }
+
         _handleSharedEditOnPost(post) {
           const draftKey = post.get("topic.draft_key");
           const draftSequence = post.get("topic.draft_sequence");
