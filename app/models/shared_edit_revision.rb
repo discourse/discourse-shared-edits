@@ -206,13 +206,6 @@ class SharedEditRevision < ActiveRecord::Base
     end
   end
 end
-# t.integer :post_id, null: false
-# t.string :raw
-# t.string :revision, null: false
-# t.string :client_id, null: false
-# t.integer :user_id, null: false
-# t.integer :version, null: false
-# t.integer :post_revision
 
 # == Schema Information
 #
