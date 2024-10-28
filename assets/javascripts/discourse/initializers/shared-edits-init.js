@@ -31,18 +31,16 @@ function initWithApi(api) {
           ? "shared_edits.disable_shared_edits"
           : "shared_edits.enable_shared_edits",
         action: async (post) => {
-          let url = `/shared_edits/p/${post.id}/${
+          const url = `/shared_edits/p/${post.id}/${
             post.shared_edits_enabled ? "disable" : "enable"
           }.json`;
 
-          await ajax(url, { type: "PUT" })
-            .then(() => {
-              post.set(
-                "shared_edits_enabled",
-                post.shared_edits_enabled ? false : true
-              );
-            })
-            .catch(popupAjaxError);
+          try {
+            await ajax(url, { type: "PUT" });
+            post.set("shared_edits_enabled", !post.shared_edits_enabled);
+          } catch (e) {
+            popupAjaxError(e);
+          }
         },
       };
     });
@@ -69,22 +67,21 @@ function initWithApi(api) {
         return contents;
       },
 
-      toggleSharedEdit() {
+      async toggleSharedEdit() {
         const post = this.findAncestorModel();
 
-        let url = `/shared_edits/p/${post.id}/${
-          post.shared_edits_enabled ? "disable" : "enable"
-        }.json`;
-
-        ajax(url, { type: "PUT" })
-          .then(() => {
-            post.set(
-              "shared_edits_enabled",
-              post.shared_edits_enabled ? false : true
-            );
-            this.scheduleRerender();
-          })
-          .catch(popupAjaxError);
+        try {
+          await ajax(
+            `/shared_edits/p/${post.id}/${
+              post.shared_edits_enabled ? "disable" : "enable"
+            }.json`,
+            { type: "PUT" }
+          );
+          post.set("shared_edits_enabled", !post.shared_edits_enabled);
+          this.scheduleRerender();
+        } catch (e) {
+          popupAjaxError(e);
+        }
       },
     });
   }

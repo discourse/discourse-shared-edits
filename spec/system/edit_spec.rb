@@ -19,6 +19,7 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
       expect(revision).to be_present
       expect(revision.raw).to eq("lorem ipsum\n")
       expect(revision.revision).to eq("[]")
+      expect(SharedEditRevision.count).to eq(1)
     end
 
     find(".shared-edit").click
@@ -29,6 +30,7 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
       revision = SharedEditRevision.find_by(post_id: post.id, version: 2)
       expect(revision).to be_present
       expect(revision.revision).to eq("[12,\"foo\"]")
+      expect(SharedEditRevision.count).to eq(2)
     end
 
     composer.type_content " bar"
@@ -36,12 +38,14 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
       revision = SharedEditRevision.find_by(post_id: post.id, version: 3)
       expect(revision).to be_present
       expect(revision.revision).to eq("[15,\" bar\"]")
+      expect(SharedEditRevision.count).to eq(3)
     end
 
     find(".leave-shared-edit .btn-primary").click
     try_until_success do
       expect(post.reload.raw).to eq("lorem ipsum\nfoo bar")
       expect(find("#post_1 .cooked > p")).to have_content("lorem ipsum\nfoo bar")
+      expect(SharedEditRevision.count).to eq(3)
     end
   end
 end
