@@ -37,10 +37,7 @@ function initWithApi(api) {
 
           try {
             await ajax(url, { type: "PUT" });
-            post.set(
-              "shared_edits_enabled",
-              post.shared_edits_enabled ? false : true
-            );
+            post.set("shared_edits_enabled", !post.shared_edits_enabled);
           } catch (e) {
             popupAjaxError(e);
           }
@@ -80,10 +77,7 @@ function initWithApi(api) {
             }.json`,
             { type: "PUT" }
           );
-          post.set(
-            "shared_edits_enabled",
-            post.shared_edits_enabled ? false : true
-          );
+          post.set("shared_edits_enabled", !post.shared_edits_enabled);
           this.scheduleRerender();
         } catch (e) {
           popupAjaxError(e);
