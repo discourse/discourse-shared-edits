@@ -18,73 +18,31 @@ function initWithApi(api) {
 
   const currentUser = api.getCurrentUser();
 
-  if (api.addPostAdminMenuButton) {
-    api.addPostAdminMenuButton((attrs) => {
-      if (!currentUser?.staff && currentUser?.trust_level < 4) {
-        return;
-      }
+  api.addPostAdminMenuButton((attrs) => {
+    if (!currentUser?.staff && currentUser?.trust_level < 4) {
+      return;
+    }
 
-      return {
-        icon: "far-edit",
-        className: "admin-toggle-shared-edits",
-        label: attrs.shared_edits_enabled
-          ? "shared_edits.disable_shared_edits"
-          : "shared_edits.enable_shared_edits",
-        action: async (post) => {
-          const url = `/shared_edits/p/${post.id}/${
-            post.shared_edits_enabled ? "disable" : "enable"
-          }.json`;
-
-          try {
-            await ajax(url, { type: "PUT" });
-            post.set("shared_edits_enabled", !post.shared_edits_enabled);
-          } catch (e) {
-            popupAjaxError(e);
-          }
-        },
-      };
-    });
-  } else {
-    api.reopenWidget("post-admin-menu", {
-      html(attrs) {
-        const contents = this._super(...arguments);
-
-        if (!this.currentUser.staff || !contents.children) {
-          return contents;
-        }
-
-        contents.children.push(
-          this.attach("post-admin-menu-button", {
-            action: "toggleSharedEdit",
-            icon: "far-edit",
-            className: "admin-toggle-shared-edits",
-            label: attrs.shared_edits_enabled
-              ? "shared_edits.disable_shared_edits"
-              : "shared_edits.enable_shared_edits",
-          })
-        );
-
-        return contents;
-      },
-
-      async toggleSharedEdit() {
-        const post = this.findAncestorModel();
+    return {
+      icon: "far-edit",
+      className: "admin-toggle-shared-edits",
+      label: attrs.shared_edits_enabled
+        ? "shared_edits.disable_shared_edits"
+        : "shared_edits.enable_shared_edits",
+      action: async (post) => {
+        const url = `/shared_edits/p/${post.id}/${
+          post.shared_edits_enabled ? "disable" : "enable"
+        }.json`;
 
         try {
-          await ajax(
-            `/shared_edits/p/${post.id}/${
-              post.shared_edits_enabled ? "disable" : "enable"
-            }.json`,
-            { type: "PUT" }
-          );
+          await ajax(url, { type: "PUT" });
           post.set("shared_edits_enabled", !post.shared_edits_enabled);
-          this.scheduleRerender();
         } catch (e) {
           popupAjaxError(e);
         }
       },
-    });
-  }
+    };
+  });
 
   api.includePostAttributes("shared_edits_enabled");
 
