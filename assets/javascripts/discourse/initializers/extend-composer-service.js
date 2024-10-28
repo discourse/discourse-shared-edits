@@ -1,9 +1,5 @@
+import { service } from "@ember/service";
 import { withPluginApi } from "discourse/lib/plugin-api";
-import {
-  performSharedEdit,
-  setupSharedEdit,
-  teardownSharedEdit,
-} from "../lib/shared-edits";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 
@@ -21,27 +17,13 @@ export default {
         "service:composer",
         (Superclass) =>
           class extends Superclass {
-            init() {
-              super.init(...arguments);
-              this.addObserver("model.reply", this, this._handleSharedEdit);
-            }
-
-            willDestroy() {
-              super.willDestroy(...arguments);
-              this.removeObserver("model.reply", this, this._handleSharedEdit);
-            }
-
-            _handleSharedEdit() {
-              if (this.model?.action === SHARED_EDIT_ACTION) {
-                performSharedEdit(this.model);
-              }
-            }
+            @service sharedEditManager;
 
             async open(opts) {
               await super.open(...arguments);
 
               if (opts.action === SHARED_EDIT_ACTION) {
-                setupSharedEdit(this.model);
+                await this.sharedEditManager.subscribe();
               }
             }
 
@@ -54,7 +36,7 @@ export default {
 
             close() {
               if (this.model?.action === SHARED_EDIT_ACTION) {
-                teardownSharedEdit(this.model);
+                this.sharedEditManager.commit();
               }
               return super.close(...arguments);
             }
