@@ -1,8 +1,3 @@
-import {
-  POST_MENU_EDIT_BUTTON_KEY,
-  POST_MENU_REPLY_BUTTON_KEY,
-  POST_MENU_SHOW_MORE_BUTTON_KEY,
-} from "discourse/components/post/menu";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
@@ -139,20 +134,20 @@ function initWithApi(api) {
 function customizePostMenu(api) {
   const transformerRegistered = api.registerValueTransformer(
     "post-menu-buttons",
-    ({ value: dag, context: { post, buttonLabels } }) => {
+    ({ value: dag, context: { post, buttonLabels, buttonKeys } }) => {
       if (!post.shared_edits_enabled || !post.canEdit) {
         return;
       }
 
-      dag.replace(POST_MENU_EDIT_BUTTON_KEY, SharedEditButton, {
-        after: [POST_MENU_SHOW_MORE_BUTTON_KEY, POST_MENU_REPLY_BUTTON_KEY],
+      dag.replace(buttonKeys.EDIT, SharedEditButton, {
+        after: [buttonKeys.SHOW_MORE, buttonKeys.REPLY],
       });
-      dag.reposition(POST_MENU_REPLY_BUTTON_KEY, {
-        after: POST_MENU_SHOW_MORE_BUTTON_KEY,
-        before: POST_MENU_EDIT_BUTTON_KEY,
+      dag.reposition(buttonKeys.REPLY, {
+        after: buttonKeys.SHOW_MORE,
+        before: buttonKeys.EDIT,
       });
 
-      buttonLabels.hide(POST_MENU_REPLY_BUTTON_KEY);
+      buttonLabels.hide(buttonKeys.REPLY);
     }
   );
 
