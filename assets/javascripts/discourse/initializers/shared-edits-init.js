@@ -1,3 +1,4 @@
+import { tracked } from "@glimmer/tracking";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
@@ -150,6 +151,16 @@ function customizePostMenu(api) {
       buttonLabels.hide(buttonKeys.REPLY);
     }
   );
+
+  if (transformerRegistered) {
+    api.modifyClass(
+      "model:post",
+      (Superclass) =>
+        class extends Superclass {
+          @tracked shared_edits_enabled;
+        }
+    );
+  }
 
   const silencedKey =
     transformerRegistered && "discourse.post-menu-widget-overrides";
