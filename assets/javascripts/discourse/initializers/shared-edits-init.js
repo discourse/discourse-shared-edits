@@ -1,7 +1,10 @@
+import { tracked } from "@glimmer/tracking";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
+import { withSilencedDeprecations } from "discourse-common/lib/deprecated";
+import SharedEditButton from "../components/shared-edit-button";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 
@@ -15,6 +18,8 @@ function replaceButton(buttons, find, replace) {
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil-alt";
+
+  customizePostMenu(api);
 
   const currentUser = api.getCurrentUser();
 
@@ -50,57 +55,6 @@ function initWithApi(api) {
     if (attrs.shared_edits_enabled && attrs.canEdit) {
       return ["shared-edits-post"];
     }
-  });
-
-  api.addPostMenuButton("sharedEdit", (post) => {
-    if (!post.shared_edits_enabled || !post.canEdit) {
-      return;
-    }
-
-    const result = {
-      action: SHARED_EDIT_ACTION,
-      icon: "far-edit",
-      title: "shared_edits.button_title",
-      className: "shared-edit create fade-out",
-      position: "last",
-    };
-
-    if (!post.mobileView) {
-      result.label = "shared_edits.edit";
-    }
-
-    return result;
-  });
-
-  api.removePostMenuButton("edit", (attrs) => {
-    return attrs.shared_edits_enabled && attrs.canEdit;
-  });
-
-  api.removePostMenuButton("wiki-edit", (attrs) => {
-    return attrs.shared_edits_enabled && attrs.canEdit;
-  });
-
-  api.reopenWidget("post-menu", {
-    menuItems() {
-      const result = this._super(...arguments);
-
-      // wiki handles the reply button on its own. If not a wiki and is shared-edit
-      // remove the label from the reply button.
-      if (
-        this.attrs.shared_edits_enabled &&
-        this.attrs.canEdit &&
-        !this.attrs.wiki
-      ) {
-        replaceButton(result, "reply", "reply-small");
-      }
-
-      return result;
-    },
-
-    sharedEdit() {
-      const post = this.findAncestorModel();
-      this.appEvents.trigger("shared-edit-on-post", post);
-    },
   });
 
   api.modifyClass(
@@ -176,6 +130,94 @@ function initWithApi(api) {
         }
       }
   );
+}
+
+function customizePostMenu(api) {
+  const transformerRegistered = api.registerValueTransformer(
+    "post-menu-buttons",
+    ({ value: dag, context: { post, buttonLabels, buttonKeys } }) => {
+      if (!post.shared_edits_enabled || !post.canEdit) {
+        return;
+      }
+
+      dag.replace(buttonKeys.EDIT, SharedEditButton, {
+        after: [buttonKeys.SHOW_MORE, buttonKeys.REPLY],
+      });
+      dag.reposition(buttonKeys.REPLY, {
+        after: buttonKeys.SHOW_MORE,
+        before: buttonKeys.EDIT,
+      });
+
+      buttonLabels.hide(buttonKeys.REPLY);
+    }
+  );
+
+  if (transformerRegistered) {
+    api.modifyClass(
+      "model:post",
+      (Superclass) =>
+        class extends Superclass {
+          @tracked shared_edits_enabled;
+        }
+    );
+  }
+
+  const silencedKey =
+    transformerRegistered && "discourse.post-menu-widget-overrides";
+
+  withSilencedDeprecations(silencedKey, () => customizeWidgetPostMenu(api));
+}
+
+function customizeWidgetPostMenu(api) {
+  api.addPostMenuButton("sharedEdit", (post) => {
+    if (!post.shared_edits_enabled || !post.canEdit) {
+      return;
+    }
+
+    const result = {
+      action: SHARED_EDIT_ACTION,
+      icon: "far-edit",
+      title: "shared_edits.button_title",
+      className: "shared-edit create fade-out",
+      position: "last",
+    };
+
+    if (!post.mobileView) {
+      result.label = "shared_edits.edit";
+    }
+
+    return result;
+  });
+
+  api.removePostMenuButton("edit", (attrs) => {
+    return attrs.shared_edits_enabled && attrs.canEdit;
+  });
+
+  api.removePostMenuButton("wiki-edit", (attrs) => {
+    return attrs.shared_edits_enabled && attrs.canEdit;
+  });
+
+  api.reopenWidget("post-menu", {
+    menuItems() {
+      const result = this._super(...arguments);
+
+      // wiki handles the reply button on its own. If not a wiki and is shared-edit
+      // remove the label from the reply button.
+      if (
+        this.attrs.shared_edits_enabled &&
+        this.attrs.canEdit &&
+        !this.attrs.wiki
+      ) {
+        replaceButton(result, "reply", "reply-small");
+      }
+
+      return result;
+    },
+
+    sharedEdit() {
+      SharedEditButton.sharedEdit(this.findAncestorModel(), this.appEvents);
+    },
+  });
 }
 
 export default {

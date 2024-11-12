@@ -7,45 +7,53 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
 
   before { sign_in(admin) }
 
-  it "allows the user to edit and save a post" do
-    visit(post.topic.relative_url)
+  glimmer_post_menu_states = %w[enabled disabled]
 
-    find(".show-more-actions").click
-    find(".show-post-admin-menu").click
-    find(".admin-toggle-shared-edits").click
+  glimmer_post_menu_states.each do |state|
+    context "with the glimmer post menu #{state}" do
+      before { SiteSetting.glimmer_post_menu_mode = state }
 
-    try_until_success do
-      revision = SharedEditRevision.find_by(post_id: post.id, version: 1)
-      expect(revision).to be_present
-      expect(revision.raw).to eq("lorem ipsum\n")
-      expect(revision.revision).to eq("[]")
-      expect(SharedEditRevision.count).to eq(1)
-    end
+      it "allows the user to edit and save a post" do
+        visit(post.topic.relative_url)
 
-    find(".shared-edit").click
-    expect(composer).to have_content("lorem ipsum")
+        find(".show-more-actions").click
+        find(".show-post-admin-menu").click
+        find(".admin-toggle-shared-edits").click
 
-    composer.type_content "foo"
-    try_until_success do
-      revision = SharedEditRevision.find_by(post_id: post.id, version: 2)
-      expect(revision).to be_present
-      expect(revision.revision).to eq("[12,\"foo\"]")
-      expect(SharedEditRevision.count).to eq(2)
-    end
+        try_until_success do
+          revision = SharedEditRevision.find_by(post_id: post.id, version: 1)
+          expect(revision).to be_present
+          expect(revision.raw).to eq("lorem ipsum\n")
+          expect(revision.revision).to eq("[]")
+          expect(SharedEditRevision.count).to eq(1)
+        end
 
-    composer.type_content " bar"
-    try_until_success do
-      revision = SharedEditRevision.find_by(post_id: post.id, version: 3)
-      expect(revision).to be_present
-      expect(revision.revision).to eq("[15,\" bar\"]")
-      expect(SharedEditRevision.count).to eq(3)
-    end
+        find(".shared-edit").click
+        expect(composer).to have_content("lorem ipsum")
 
-    find(".leave-shared-edit .btn-primary").click
-    try_until_success do
-      expect(post.reload.raw).to eq("lorem ipsum\nfoo bar")
-      expect(find("#post_1 .cooked > p")).to have_content("lorem ipsum\nfoo bar")
-      expect(SharedEditRevision.count).to eq(3)
+        composer.type_content "foo"
+        try_until_success do
+          revision = SharedEditRevision.find_by(post_id: post.id, version: 2)
+          expect(revision).to be_present
+          expect(revision.revision).to eq("[12,\"foo\"]")
+          expect(SharedEditRevision.count).to eq(2)
+        end
+
+        composer.type_content " bar"
+        try_until_success do
+          revision = SharedEditRevision.find_by(post_id: post.id, version: 3)
+          expect(revision).to be_present
+          expect(revision.revision).to eq("[15,\" bar\"]")
+          expect(SharedEditRevision.count).to eq(3)
+        end
+
+        find(".leave-shared-edit .btn-primary").click
+        try_until_success do
+          expect(post.reload.raw).to eq("lorem ipsum\nfoo bar")
+          expect(find("#post_1 .cooked > p")).to have_content("lorem ipsum\nfoo bar")
+          expect(SharedEditRevision.count).to eq(3)
+        end
+      end
     end
   end
 end

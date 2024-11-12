@@ -5,6 +5,10 @@ import { acceptance } from "discourse/tests/helpers/qunit-helpers";
 acceptance("Discourse Shared Edits | Composer", function (needs) {
   needs.user();
 
+  needs.settings({
+    glimmer_post_menu_mode: "enabled",
+  });
+
   needs.pretender((server, helper) => {
     server.put("/shared_edits/p/398/enable.json", () =>
       helper.response({ success: "OK" })
