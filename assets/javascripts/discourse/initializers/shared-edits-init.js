@@ -82,19 +82,6 @@ function initWithApi(api) {
   );
 
   api.modifyClass(
-    "component:composer-editor",
-    (Superclass) =>
-      class extends Superclass {
-        keyDown() {
-          super.keyDown?.(...arguments);
-          if (this.composer.action === SHARED_EDIT_ACTION) {
-            this.composer.set("lastKeyPress", Date.now());
-          }
-        }
-      }
-  );
-
-  api.modifyClass(
     "controller:topic",
     (Superclass) =>
       class extends Superclass {
