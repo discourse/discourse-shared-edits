@@ -35,7 +35,7 @@ export default class SharedEditButton extends Component {
       }}
       ...attributes
       @action={{this.sharedEdit}}
-      @icon="far-edit"
+      @icon="far-pen-to-square"
       @label={{if this.showLabel "post.controls.edit_action"}}
       @title="shared_edits.button_title"
     />
