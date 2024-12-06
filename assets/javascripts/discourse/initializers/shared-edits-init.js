@@ -29,7 +29,7 @@ function initWithApi(api) {
     }
 
     return {
-      icon: "far-edit",
+      icon: "far-pen-to-square",
       className: "admin-toggle-shared-edits",
       label: attrs.shared_edits_enabled
         ? "shared_edits.disable_shared_edits"
@@ -163,7 +163,7 @@ function customizeWidgetPostMenu(api) {
 
     const result = {
       action: SHARED_EDIT_ACTION,
-      icon: "far-edit",
+      icon: "far-pen-to-square",
       title: "shared_edits.button_title",
       className: "shared-edit create fade-out",
       position: "last",
