@@ -1,4 +1,3 @@
-import { tracked } from "@glimmer/tracking";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
@@ -140,13 +139,8 @@ function customizePostMenu(api) {
   );
 
   if (transformerRegistered) {
-    api.modifyClass(
-      "model:post",
-      (Superclass) =>
-        class extends Superclass {
-          @tracked shared_edits_enabled;
-        }
-    );
+    // register the property as tracked to ensure the button is correctly updated
+    api.addTrackedPostProperty("shared_edits_enabled");
   }
 
   const silencedKey =
