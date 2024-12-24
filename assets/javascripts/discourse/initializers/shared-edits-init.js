@@ -140,7 +140,7 @@ function customizePostMenu(api) {
 
   if (transformerRegistered) {
     // register the property as tracked to ensure the button is correctly updated
-    api.addTrackedPostProperty("shared_edits_enabled");
+    api.addTrackedPostProperties("shared_edits_enabled");
   }
 
   const silencedKey =
@@ -209,6 +209,6 @@ export default {
       return;
     }
 
-    withPluginApi("1.39.0", initWithApi);
+    withPluginApi("1.39.2", initWithApi);
   },
 };
