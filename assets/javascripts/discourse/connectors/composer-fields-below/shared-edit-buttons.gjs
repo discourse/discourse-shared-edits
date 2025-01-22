@@ -18,7 +18,7 @@ export default class SharedEditButtons extends Component {
       <div class="leave-shared-edit">
         <DButton
           @action={{this.endSharedEdit}}
-          @icon={{if this.site.mobileView "times"}}
+          @icon={{if this.site.mobileView "xmark"}}
           @label={{if this.site.desktopView "shared_edits.done"}}
           title={{if this.site.mobileView (i18n "shared_edits.done")}}
           class={{if this.site.mobileView "btn-transparent" "btn-primary"}}
