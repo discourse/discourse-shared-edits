@@ -16,7 +16,7 @@ function replaceButton(buttons, find, replace) {
 
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
-  SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil-alt";
+  SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil";
 
   customizePostMenu(api);
 
