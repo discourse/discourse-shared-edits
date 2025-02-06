@@ -1,8 +1,8 @@
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { withSilencedDeprecations } from "discourse/lib/deprecated";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
-import { withSilencedDeprecations } from "discourse-common/lib/deprecated";
 import SharedEditButton from "../components/shared-edit-button";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
