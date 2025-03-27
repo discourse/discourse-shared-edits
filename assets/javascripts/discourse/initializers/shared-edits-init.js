@@ -119,7 +119,7 @@ function initWithApi(api) {
 }
 
 function customizePostMenu(api) {
-  const transformerRegistered = api.registerValueTransformer(
+  api.registerValueTransformer(
     "post-menu-buttons",
     ({ value: dag, context: { post, buttonLabels, buttonKeys } }) => {
       if (!post.shared_edits_enabled || !post.canEdit) {
@@ -138,67 +138,8 @@ function customizePostMenu(api) {
     }
   );
 
-  if (transformerRegistered) {
-    // register the property as tracked to ensure the button is correctly updated
-    api.addTrackedPostProperties("shared_edits_enabled");
-  }
-
-  const silencedKey =
-    transformerRegistered && "discourse.post-menu-widget-overrides";
-
-  withSilencedDeprecations(silencedKey, () => customizeWidgetPostMenu(api));
-}
-
-function customizeWidgetPostMenu(api) {
-  api.addPostMenuButton("sharedEdit", (post) => {
-    if (!post.shared_edits_enabled || !post.canEdit) {
-      return;
-    }
-
-    const result = {
-      action: SHARED_EDIT_ACTION,
-      icon: "far-pen-to-square",
-      title: "shared_edits.button_title",
-      className: "shared-edit create fade-out",
-      position: "last",
-    };
-
-    if (!post.mobileView) {
-      result.label = "shared_edits.edit";
-    }
-
-    return result;
-  });
-
-  api.removePostMenuButton("edit", (attrs) => {
-    return attrs.shared_edits_enabled && attrs.canEdit;
-  });
-
-  api.removePostMenuButton("wiki-edit", (attrs) => {
-    return attrs.shared_edits_enabled && attrs.canEdit;
-  });
-
-  api.reopenWidget("post-menu", {
-    menuItems() {
-      const result = this._super(...arguments);
-
-      // wiki handles the reply button on its own. If not a wiki and is shared-edit
-      // remove the label from the reply button.
-      if (
-        this.attrs.shared_edits_enabled &&
-        this.attrs.canEdit &&
-        !this.attrs.wiki
-      ) {
-        replaceButton(result, "reply", "reply-small");
-      }
-
-      return result;
-    },
-
-    sharedEdit() {
-      SharedEditButton.sharedEdit(this.findAncestorModel(), this.appEvents);
-    },
-  });
+  // register the property as tracked to ensure the button is correctly updated
+  api.addTrackedPostProperties("shared_edits_enabled");
 }
 
 export default {
