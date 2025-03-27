@@ -1,18 +1,10 @@
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import { withSilencedDeprecations } from "discourse/lib/deprecated";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 import SharedEditButton from "../components/shared-edit-button";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
-
-function replaceButton(buttons, find, replace) {
-  const idx = buttons.indexOf(find);
-  if (idx !== -1) {
-    buttons[idx] = replace;
-  }
-}
 
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
