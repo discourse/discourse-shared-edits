@@ -9,11 +9,6 @@ export default class SharedEditButton extends Component {
     return args.post.can_edit;
   }
 
-  // TODO (glimmer-post-menu): Remove this static method and move the code into the button action after the widget code is removed
-  static sharedEdit(post, appEvents) {
-    appEvents.trigger("shared-edit-on-post", post);
-  }
-
   @service appEvents;
   @service site;
 
@@ -23,7 +18,7 @@ export default class SharedEditButton extends Component {
 
   @action
   sharedEdit() {
-    SharedEditButton.sharedEdit(this.args.post, this.appEvents);
+    this.appEvents.trigger("shared-edit-on-post", this.args.post);
   }
 
   <template>
