@@ -5,3 +5,7 @@
 # https://translate.discourse.org/
 
 el:
+  shared_edits:
+    reason: "Επεξεργάσθηκε από: %{users}"
+  site_settings:
+    shared_edits_enabled: Ενεργοποιήστε την κοινή, συνεργατική επεξεργασία σε καθορισμένες αναρτήσεις.
