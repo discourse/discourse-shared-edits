@@ -49,16 +49,6 @@ function initWithApi(api) {
   });
 
   api.modifyClass(
-    "component:scrolling-post-stream",
-    (Superclass) =>
-      class extends Superclass {
-        sharedEdit() {
-          this.appEvents.trigger("shared-edit-on-post");
-        }
-      }
-  );
-
-  api.modifyClass(
     "model:composer",
     (Superclass) =>
       class extends Superclass {
