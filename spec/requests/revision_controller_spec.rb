@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe DiscourseSharedEdits::RevisionController do
-  fab!(:post1) { Fabricate(:post) }
+  fab!(:post1, :post)
   fab!(:admin)
   fab!(:user)
 

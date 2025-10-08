@@ -132,6 +132,6 @@ export default {
       return;
     }
 
-    withPluginApi("1.39.2", initWithApi);
+    withPluginApi(initWithApi);
   },
 };
