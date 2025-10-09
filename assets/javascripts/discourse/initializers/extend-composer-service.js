@@ -12,7 +12,7 @@ export default {
       return;
     }
 
-    withPluginApi("0.8.6", (api) => {
+    withPluginApi((api) => {
       api.modifyClass(
         "service:composer",
         (Superclass) =>
