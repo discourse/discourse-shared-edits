@@ -35,12 +35,18 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       SharedEditRevision.toggle_shared_edits!(post1.id, true)
     end
 
+    def latest_state_for(post)
+      SharedEditRevision.where(post_id: post.id).order("version desc").limit(1).pluck(:raw).first
+    end
+
     it "can submit edits on a post" do
+      new_text = "1234" + post1.raw[4..]
+      latest_state = latest_state_for(post1)
+
       put "/shared_edits/p/#{post1.id}",
           params: {
             client_id: "abc",
-            version: 1,
-            revision: [{ d: 4 }, "1234"].to_json,
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
           }
       expect(response.status).to eq(200)
 
@@ -51,11 +57,13 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
     end
 
     it "can get the latest version" do
+      new_text = "1234" + post1.raw[4..]
+      latest_state = latest_state_for(post1)
+
       put "/shared_edits/p/#{post1.id}",
           params: {
             client_id: "abc",
-            version: 1,
-            revision: [{ d: 4 }, "1234"].to_json,
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
           }
 
       get "/shared_edits/p/#{post1.id}"
@@ -63,20 +71,24 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
       raw = response.parsed_body["raw"]
       version = response.parsed_body["version"]
+      state = response.parsed_body["state"]
 
       expect(raw[0..3]).to eq("1234")
       expect(version).to eq(2)
+      expect(state).to be_present
     end
 
     it "will defer commit" do
       Discourse.redis.del SharedEditRevision.will_commit_key(post1.id)
 
+      new_text = "1234" + post1.raw[4..]
+      latest_state = latest_state_for(post1)
+
       Sidekiq::Testing.inline! do
         put "/shared_edits/p/#{post1.id}",
             params: {
               client_id: "abc",
-              version: 1,
-              revision: [{ d: 4 }, "1234"].to_json,
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
             }
 
         get "/shared_edits/p/#{post1.id}"
@@ -90,26 +102,31 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       end
     end
 
-    it "can submit old edits to a post and get sane info" do
+    it "accepts multiple updates without client-side version tracking" do
+      first_text = "abcd" + post1.raw[4..]
+      second_text = "wxyz" + post1.raw[4..]
+      latest_state = latest_state_for(post1)
+
       put "/shared_edits/p/#{post1.id}",
           params: {
             client_id: "abc",
-            version: 1,
-            revision: [{ d: 4 }, "1234"].to_json,
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, first_text),
           }
+
+      latest_state = latest_state_for(post1)
 
       put "/shared_edits/p/#{post1.id}",
           params: {
             client_id: "123",
-            version: 1,
-            revision: [4, { d: 4 }, "abcd"].to_json,
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, second_text),
           }
+
       expect(response.status).to eq(200)
 
       SharedEditRevision.commit!(post1.id)
 
       post1.reload
-      expect(post1.raw[4..7]).to eq("abcd")
+      expect(post1.raw[0..3]).to eq("wxyz")
     end
 
     it "can not enable revisions as normal user" do

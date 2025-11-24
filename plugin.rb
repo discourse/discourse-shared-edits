@@ -22,7 +22,7 @@ after_initialize do
     end
   end
 
-  require_relative "lib/ot_text_unicode"
+  require_relative "lib/discourse_shared_edits/yjs"
   require_relative "app/models/shared_edit_revision"
   require_relative "app/controllers/discourse_shared_edits/revision_controller"
   require_relative "app/jobs/commit_shared_revision"

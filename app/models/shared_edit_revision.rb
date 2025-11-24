@@ -34,175 +34,126 @@ class SharedEditRevision < ActiveRecord::Base
   end
 
   def self.init!(post)
-    if !SharedEditRevision.where(post_id: post.id).exists?
-      revision_id = last_revision_id_for_post(post)
+    return if SharedEditRevision.where(post_id: post.id).exists?
 
-      SharedEditRevision.create!(
-        post: post,
-        client_id: "system",
-        user_id: Discourse.system_user.id,
-        version: 1,
-        revision: "[]",
-        raw: post.raw,
-        post_revision_id: revision_id,
-      )
-    end
+    revision_id = last_revision_id_for_post(post)
+    initial_state = DiscourseSharedEdits::Yjs.state_from_text(post.raw)
+
+    SharedEditRevision.create!(
+      post: post,
+      client_id: "system",
+      user_id: Discourse.system_user.id,
+      version: 1,
+      revision: "",
+      raw: initial_state[:state],
+      post_revision_id: revision_id,
+    )
   end
 
   def self.commit!(post_id, apply_to_post: true)
-    version_with_raw =
-      SharedEditRevision
-        .where(post_id: post_id)
-        .where("raw IS NOT NULL")
-        .order("version desc")
-        .first
+    latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
 
-    return if !version_with_raw
+    return if !latest&.raw
+    return if latest.post_revision_id && !apply_to_post
 
-    raw = version_with_raw.raw
+    raw = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
 
-    to_resolve =
-      SharedEditRevision
-        .where(post_id: post_id)
-        .where("version > ?", version_with_raw.version)
-        .order(:version)
-
-    last_revision = version_with_raw
-
-    editors = []
-
-    to_resolve.each do |rev|
-      raw = OtTextUnicode.apply(raw, rev.revision)
-      last_revision = rev
-      editors << rev.user_id
-    end
-
-    last_revision.update!(raw: raw) if last_revision.raw != raw
-    return if last_revision.post_revision_id
-    return if !apply_to_post
+    return raw if latest.post_revision_id || !apply_to_post
 
     post = Post.find(post_id)
     revisor = PostRevisor.new(post)
 
-    # TODO decide if we need fidelity here around skip_revision
-    # skip_revision: true
-
     opts = { bypass_rate_limiter: true, bypass_bump: true, skip_staff_log: true }
 
-    # revise must be called outside of transaction
-    # otherwise you get phantom edits where and edit can take 2 cycles
-    # to take
     done = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
 
-    Post.transaction do
-      if done
-        last_post_revision = PostRevision.where(post: post).limit(1).order("number desc").first
+    return raw if !done
 
-        reason = last_post_revision.modifications["edit_reason"] || ""
+    last_post_revision = PostRevision.where(post: post).limit(1).order("number desc").first
 
-        reason = reason[1] if Array === reason
+    SharedEditRevision.transaction do
+      last_committed_version =
+        SharedEditRevision
+          .where(post_id: post_id)
+          .where.not(post_revision_id: nil)
+          .maximum(:version) || 0
 
-        usernames = reason&.split(",")&.map(&:strip) || []
+      editors =
+        SharedEditRevision
+          .where(post_id: post_id)
+          .where("version > ?", last_committed_version)
+          .pluck(:user_id)
+          .uniq
 
-        if usernames.length > 0
-          reason_length = I18n.t("shared_edits.reason", users: "").length
-          usernames[0] = usernames[0][reason_length..-1]
-        end
+      reason = last_post_revision.modifications["edit_reason"] || ""
+      reason = reason[1] if Array === reason
 
-        User.where(id: editors).pluck(:username).each { |name| usernames << name }
+      usernames = reason&.split(",")&.map(&:strip) || []
 
-        usernames.uniq!
-
-        new_reason = I18n.t("shared_edits.reason", users: usernames.join(", "))
-
-        if new_reason != reason
-          last_post_revision.modifications["edit_reason"] = [nil, new_reason]
-          last_post_revision.save!
-          post.update!(edit_reason: new_reason)
-        end
-
-        last_revision.update!(post_revision_id: last_post_revision.id)
+      if usernames.length > 0
+        reason_length = I18n.t("shared_edits.reason", users: "").length
+        usernames[0] = usernames[0][reason_length..-1]
       end
+
+      User.where(id: editors).pluck(:username).each { |name| usernames << name }
+
+      usernames.uniq!
+
+      new_reason = I18n.t("shared_edits.reason", users: usernames.join(", "))
+
+      if new_reason != reason
+        last_post_revision.modifications["edit_reason"] = [nil, new_reason]
+        last_post_revision.save!
+        post.update!(edit_reason: new_reason)
+      end
+
+      latest.update!(post_revision_id: last_post_revision.id)
     end
 
     raw
   end
 
   def self.latest_raw(post_id)
-    SharedEditRevision
-      .where("raw IS NOT NULL")
-      .where(post_id: post_id)
-      .order("version desc")
-      .limit(1)
-      .pluck(:version, :raw)
-      .first
+    latest =
+      SharedEditRevision
+        .where("raw IS NOT NULL")
+        .where(post_id: post_id)
+        .order("version desc")
+        .limit(1)
+        .first
+
+    return if !latest
+
+    [latest.version, DiscourseSharedEdits::Yjs.text_from_state(latest.raw)]
   end
 
-  def self.revise!(post_id:, user_id:, client_id:, revision:, version:)
-    revision = revision.to_json if !(String === revision)
+  def self.revise!(post_id:, user_id:, client_id:, update:)
+    SharedEditRevision.transaction do
+      latest = SharedEditRevision.where(post_id: post_id).lock.order("version desc").first
+      raise StandardError, "shared edits not initialized" if !latest
 
-    args = {
-      user_id: user_id,
-      client_id: client_id,
-      revision: revision,
-      post_id: post_id,
-      version: version + 1,
-      now: Time.zone.now,
-    }
+      applied = DiscourseSharedEdits::Yjs.apply_update(latest.raw, update)
 
-    rows = DB.exec(<<~SQL, args)
-      INSERT INTO shared_edit_revisions
-      (
-        post_id,
-        user_id,
-        client_id,
-        revision,
-        version,
-        created_at,
-        updated_at
-      )
-      SELECT
-        :post_id,
-        :user_id,
-        :client_id,
-        :revision,
-        :version,
-        :now,
-        :now
-      WHERE :version = (
-        SELECT MAX(version) + 1
-        FROM shared_edit_revisions
-        WHERE post_id = :post_id
-      )
-    SQL
+      revision =
+        SharedEditRevision.create!(
+          post_id: post_id,
+          user_id: user_id,
+          client_id: client_id,
+          revision: update,
+          raw: applied[:state],
+          version: latest.version + 1,
+        )
 
-    if rows == 1
       post = Post.find(post_id)
-      message = { version: version + 1, revision: revision, client_id: client_id, user_id: user_id }
-      post.publish_message!("/shared_edits/#{post.id}", message)
-      [version + 1, revision]
-    else
-      missing =
-        SharedEditRevision
-          .where(post_id: post_id)
-          .where("version > ?", version)
-          .order(:version)
-          .pluck(:version, :revision)
-
-      raise StandardError, "no revisions to apply" if missing.length == 0
-
-      missing.each do |missing_version, missing_revision|
-        revision = OtTextUnicode.transform(revision, missing_revision)
-        version = missing_version
-      end
-
-      revise!(
-        post_id: post_id,
-        user_id: user_id,
+      message = {
+        version: revision.version,
+        update: update,
         client_id: client_id,
-        revision: revision,
-        version: version,
-      )
+        user_id: user_id,
+      }
+      post.publish_message!("/shared_edits/#{post.id}", message)
+
+      [revision.version, update]
     end
   end
 end
@@ -213,8 +164,8 @@ end
 #
 #  id               :bigint           not null, primary key
 #  post_id          :integer          not null
-#  raw              :string
-#  revision         :string           not null
+#  raw              :text
+#  revision         :text             not null
 #  user_id          :integer          not null
 #  client_id        :string           not null
 #  version          :integer          not null

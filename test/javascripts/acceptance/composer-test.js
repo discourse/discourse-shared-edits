@@ -6,18 +6,21 @@ acceptance(`Discourse Shared Edits | Composer`, function (needs) {
   needs.user();
 
   needs.pretender((server, helper) => {
-    server.put("/shared_edits/p/398/enable.json", () =>
+    server.put("/shared_edits/p/:id/enable.json", () =>
       helper.response({ success: "OK" })
     );
 
-    server.get("/shared_edits/p/398", () =>
+    server.get("/shared_edits/p/:id", () =>
       helper.response({
+        state: "",
         raw: "the latest iteration of the post",
         version: 2,
       })
     );
 
-    server.put("/shared_edits/p/398/commit", () =>
+    server.put("/shared_edits/p/:id", () => helper.response({ success: "OK" }));
+
+    server.put("/shared_edits/p/:id/commit", () =>
       helper.response({ success: "OK" })
     );
   });
