@@ -38,14 +38,15 @@ module DiscourseSharedEdits
 
           ctx.eval(<<~JS)
             const YRef = global.Y;
+            const TEXT_KEY = "post";
 
-            function docFromText(text) {
+            function createDocWithText(text) {
               const doc = new YRef.Doc();
-              doc.getText("post").insert(0, text || "");
+              doc.getText(TEXT_KEY).insert(0, text || "");
               return doc;
             }
 
-            function yDocFromState(state) {
+            function createDocFromState(state) {
               const doc = new YRef.Doc();
               if (state && state.length) {
                 YRef.applyUpdate(doc, new Uint8Array(state));
@@ -53,78 +54,15 @@ module DiscourseSharedEdits
               return doc;
             }
 
-            function encodeState(doc) {
+            function encodeDocState(doc) {
               return Array.from(YRef.encodeStateAsUpdate(doc));
             }
 
-            function docText(doc) {
-              return doc.getText("post").toString();
+            function getDocText(doc) {
+              return doc.getText(TEXT_KEY).toString();
             }
 
-            function applyUpdateToState(state, update) {
-              const doc = yDocFromState(state);
-              if (update && update.length) {
-                YRef.applyUpdate(doc, new Uint8Array(update));
-              }
-
-              return { state: encodeState(doc), text: docText(doc) };
-            }
-
-            function stateFromText(text) {
-              const doc = docFromText(text);
-              return { state: encodeState(doc), text: docText(doc) };
-            }
-
-            function updateFromTextChange(oldText, newText) {
-              const doc = docFromText(oldText);
-              const before = YRef.encodeStateVector(doc);
-              const text = doc.getText("post");
-              const oldVal = oldText || "";
-              const newVal = newText || "";
-
-              let start = 0;
-              while (
-                start < oldVal.length &&
-                start < newVal.length &&
-                oldVal[start] === newVal[start]
-              ) {
-                start++;
-              }
-
-              let endOld = oldVal.length - 1;
-              let endNew = newVal.length - 1;
-
-              while (
-                endOld >= start &&
-                endNew >= start &&
-                oldVal[endOld] === newVal[endNew]
-              ) {
-                endOld--;
-                endNew--;
-              }
-
-              const removeCount = Math.max(0, endOld - start + 1);
-              const insertText =
-                endNew >= start ? newVal.slice(start, endNew + 1) : "";
-
-              if (removeCount > 0) {
-                text.delete(start, removeCount);
-              }
-
-              if (insertText.length > 0) {
-                text.insert(start, insertText);
-              }
-
-              return Array.from(YRef.encodeStateAsUpdate(doc, before));
-            }
-
-            function updateFromState(state, newText) {
-              const doc = yDocFromState(state);
-              const before = YRef.encodeStateVector(doc);
-              const text = doc.getText("post");
-              const current = text.toString();
-              const desired = newText || "";
-
+            function applyDiffToYText(yText, current, desired) {
               let start = 0;
               while (
                 start < current.length &&
@@ -147,18 +85,42 @@ module DiscourseSharedEdits
               }
 
               const removeCount = Math.max(0, endCurrent - start + 1);
-              const insertText =
-                endDesired >= start ? desired.slice(start, endDesired + 1) : "";
-
               if (removeCount > 0) {
-                text.delete(start, removeCount);
+                yText.delete(start, removeCount);
               }
 
+              const insertText = endDesired >= start ? desired.slice(start, endDesired + 1) : "";
               if (insertText.length > 0) {
-                text.insert(start, insertText);
+                yText.insert(start, insertText);
               }
+            }
 
-              return Array.from(YRef.encodeStateAsUpdate(doc, before));
+            function applyUpdateToState(state, update) {
+              const doc = createDocFromState(state);
+              if (update && update.length) {
+                YRef.applyUpdate(doc, new Uint8Array(update));
+              }
+              return { state: encodeDocState(doc), text: getDocText(doc) };
+            }
+
+            function stateFromText(text) {
+              const doc = createDocWithText(text);
+              return { state: encodeDocState(doc), text: getDocText(doc) };
+            }
+
+            function updateFromTextChange(oldText, newText) {
+              const doc = createDocWithText(oldText);
+              const stateVector = YRef.encodeStateVector(doc);
+              applyDiffToYText(doc.getText(TEXT_KEY), oldText || "", newText || "");
+              return Array.from(YRef.encodeStateAsUpdate(doc, stateVector));
+            }
+
+            function updateFromState(state, newText) {
+              const doc = createDocFromState(state);
+              const stateVector = YRef.encodeStateVector(doc);
+              const yText = doc.getText(TEXT_KEY);
+              applyDiffToYText(yText, yText.toString(), newText || "");
+              return Array.from(YRef.encodeStateAsUpdate(doc, stateVector));
             }
           JS
 

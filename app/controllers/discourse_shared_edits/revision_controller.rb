@@ -24,12 +24,14 @@ module ::DiscourseSharedEdits
       post = Post.find(params[:post_id].to_i)
       guardian.ensure_can_see!(post)
       SharedEditRevision.commit!(post.id, apply_to_post: false)
-      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
+
+      raise Discourse::NotFound if revision.nil?
 
       render json: {
-               raw: DiscourseSharedEdits::Yjs.text_from_state(latest.raw),
-               version: latest.version,
-               state: latest.raw,
+               raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
+               version: revision.version,
+               state: revision.raw,
              }
     end
 

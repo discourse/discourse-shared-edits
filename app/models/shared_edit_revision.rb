@@ -53,65 +53,80 @@ class SharedEditRevision < ActiveRecord::Base
   def self.commit!(post_id, apply_to_post: true)
     latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
 
-    return if !latest&.raw
-    return if latest.post_revision_id && !apply_to_post
+    return if latest.nil? || latest.raw.nil?
+    return if latest.post_revision_id.present? && !apply_to_post
 
     raw = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
 
-    return raw if latest.post_revision_id || !apply_to_post
+    return raw if latest.post_revision_id.present? || !apply_to_post
 
     post = Post.find(post_id)
     revisor = PostRevisor.new(post)
-
     opts = { bypass_rate_limiter: true, bypass_bump: true, skip_staff_log: true }
+    revised = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
 
-    done = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
+    return raw unless revised
 
-    return raw if !done
-
-    last_post_revision = PostRevision.where(post: post).limit(1).order("number desc").first
+    post_revision = PostRevision.where(post: post).order("number desc").first
+    return raw if post_revision.nil?
 
     SharedEditRevision.transaction do
-      last_committed_version =
-        SharedEditRevision
-          .where(post_id: post_id)
-          .where.not(post_revision_id: nil)
-          .maximum(:version) || 0
-
-      editors =
-        SharedEditRevision
-          .where(post_id: post_id)
-          .where("version > ?", last_committed_version)
-          .pluck(:user_id)
-          .uniq
-
-      reason = last_post_revision.modifications["edit_reason"] || ""
-      reason = reason[1] if Array === reason
-
-      usernames = reason&.split(",")&.map(&:strip) || []
-
-      if usernames.length > 0
-        reason_length = I18n.t("shared_edits.reason", users: "").length
-        usernames[0] = usernames[0][reason_length..-1]
-      end
-
-      User.where(id: editors).pluck(:username).each { |name| usernames << name }
-
-      usernames.uniq!
-
-      new_reason = I18n.t("shared_edits.reason", users: usernames.join(", "))
-
-      if new_reason != reason
-        last_post_revision.modifications["edit_reason"] = [nil, new_reason]
-        last_post_revision.save!
-        post.update!(edit_reason: new_reason)
-      end
-
-      latest.update!(post_revision_id: last_post_revision.id)
+      editor_usernames = collect_editor_usernames(post_id)
+      update_edit_reason(post, post_revision, editor_usernames)
+      latest.update!(post_revision_id: post_revision.id)
     end
 
     raw
   end
+
+  def self.collect_editor_usernames(post_id)
+    last_committed_version =
+      SharedEditRevision
+        .where(post_id: post_id)
+        .where.not(post_revision_id: nil)
+        .maximum(:version) || 0
+
+    editor_ids =
+      SharedEditRevision
+        .where(post_id: post_id)
+        .where("version > ?", last_committed_version)
+        .distinct
+        .pluck(:user_id)
+
+    User.where(id: editor_ids).pluck(:username)
+  end
+  private_class_method :collect_editor_usernames
+
+  def self.update_edit_reason(post, post_revision, new_usernames)
+    return if new_usernames.empty?
+
+    existing_reason = post_revision.modifications["edit_reason"]
+    existing_reason = existing_reason[1] if existing_reason.is_a?(Array)
+    existing_reason ||= ""
+
+    existing_usernames = parse_usernames_from_reason(existing_reason)
+    combined_usernames = (existing_usernames + new_usernames).uniq
+
+    new_reason = I18n.t("shared_edits.reason", users: combined_usernames.join(", "))
+
+    return if new_reason == existing_reason
+
+    post_revision.modifications["edit_reason"] = [nil, new_reason]
+    post_revision.save!
+    post.update!(edit_reason: new_reason)
+  end
+  private_class_method :update_edit_reason
+
+  def self.parse_usernames_from_reason(reason)
+    return [] if reason.blank?
+
+    prefix = I18n.t("shared_edits.reason", users: "")
+    return [] unless reason.start_with?(prefix)
+
+    users_part = reason[prefix.length..]
+    users_part.split(",").map(&:strip).reject(&:blank?)
+  end
+  private_class_method :parse_usernames_from_reason
 
   def self.latest_raw(post_id)
     latest =
