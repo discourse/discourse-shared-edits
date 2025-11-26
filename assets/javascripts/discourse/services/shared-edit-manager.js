@@ -131,10 +131,16 @@ export default class SharedEditManager extends Service {
 
   /**
    * Apply updates received from the message bus.
-   * @param {{client_id: string, update: string}} message
+   * @param {{client_id: string, update: string, action?: string, version?: number}} message
    * @returns {void}
    */
   #onRemoteMessage = (message) => {
+    // Handle resync command from server (e.g., after recovery)
+    if (message.action === "resync") {
+      this.#handleResync();
+      return;
+    }
+
     if (!this.doc || message.client_id === this.messageBus.clientId) {
       return;
     }
@@ -159,6 +165,27 @@ export default class SharedEditManager extends Service {
     this.pendingUpdates.push(update);
     this.#sendUpdatesThrottled();
   };
+
+  /**
+   * Handle a resync command by reloading the document state from the server.
+   * @returns {Promise<void>}
+   */
+  async #handleResync() {
+    const postId = this.currentPostId || this.#postId;
+    if (!postId) {
+      return;
+    }
+
+    try {
+      const data = await ajax(`/shared_edits/p/${postId}`);
+      if (!this.composer.model || this.isDestroying || this.isDestroyed) {
+        return;
+      }
+      this.#setupDoc(data.state, data.raw);
+    } catch (e) {
+      popupAjaxError(e);
+    }
+  }
 
   /**
    * Start syncing the current composer with the shared Yjs document for the post.
@@ -488,6 +515,16 @@ export default class SharedEditManager extends Service {
       });
 
       await this.inFlightRequest;
+    } catch (e) {
+      // Handle state recovery response (409 Conflict)
+      if (
+        e.jqXHR?.status === 409 &&
+        e.jqXHR?.responseJSON?.error === "state_recovered"
+      ) {
+        await this.#handleResync();
+        return;
+      }
+      throw e;
     } finally {
       this.inFlightRequest = null;
       this.ajaxInProgress = false;

@@ -128,6 +128,19 @@ class SharedEditRevision < ActiveRecord::Base
   end
   private_class_method :parse_usernames_from_reason
 
+  def self.reset_history!(post_id)
+    post = Post.find(post_id)
+
+    SharedEditRevision.transaction do
+      commit!(post_id)
+      SharedEditRevision.where(post_id: post_id).delete_all
+      init!(post)
+    end
+
+    revision = SharedEditRevision.where(post_id: post_id).order("version desc").first
+    revision&.version
+  end
+
   def self.latest_raw(post_id)
     latest =
       SharedEditRevision
@@ -147,7 +160,7 @@ class SharedEditRevision < ActiveRecord::Base
       latest = SharedEditRevision.where(post_id: post_id).lock.order("version desc").first
       raise StandardError, "shared edits not initialized" if !latest
 
-      applied = DiscourseSharedEdits::Yjs.apply_update(latest.raw, update)
+      applied = DiscourseSharedEdits::StateValidator.safe_apply_update(post_id, latest.raw, update)
 
       revision =
         SharedEditRevision.create!(
@@ -170,6 +183,11 @@ class SharedEditRevision < ActiveRecord::Base
 
       [revision.version, update]
     end
+  rescue MiniRacer::RuntimeError, MiniRacer::ParseError => e
+    raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
+            "Yjs operation failed: #{e.message}",
+            post_id: post_id,
+          )
   end
 end
 

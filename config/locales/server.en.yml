@@ -1,5 +1,8 @@
 en:
   shared_edits:
     reason: "Edited By: %{users}"
+    errors:
+      state_corrupted: "The collaborative editing state is corrupted and could not be recovered. Please try again."
+      state_recovered: "The collaborative editing state was corrupted but has been recovered. Please refresh to continue editing."
   site_settings:
     shared_edits_enabled: Enable shared, collaborative, editing on designated posts.

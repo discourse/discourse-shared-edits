@@ -28,6 +28,22 @@ module ::DiscourseSharedEdits
 
       raise Discourse::NotFound if revision.nil?
 
+      # Validate state before sending to client
+      health = StateValidator.health_check(post.id)
+      unless health[:healthy]
+        Rails.logger.warn(
+          "[SharedEdits] Unhealthy state detected for post #{post.id}, attempting recovery",
+        )
+        recovery = StateValidator.recover_from_post_raw(post.id)
+        unless recovery[:success]
+          raise Discourse::InvalidAccess.new(
+                  I18n.t("shared_edits.errors.state_corrupted"),
+                  custom_message: "shared_edits.errors.state_corrupted",
+                )
+        end
+        revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      end
+
       render json: {
                raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
                version: revision.version,
@@ -63,6 +79,66 @@ module ::DiscourseSharedEdits
       SharedEditRevision.ensure_will_commit(post.id)
 
       render json: { version: version, update: update }
+    rescue StateValidator::StateCorruptionError => e
+      Rails.logger.error(
+        "[SharedEdits] State corruption in revise for post #{params[:post_id]}: #{e.message}",
+      )
+
+      # Attempt automatic recovery
+      recovery = StateValidator.recover_from_post_raw(params[:post_id].to_i)
+      if recovery[:success]
+        render json: {
+                 error: "state_recovered",
+                 message: I18n.t("shared_edits.errors.state_recovered"),
+                 recovered_version: recovery[:new_version],
+               },
+               status: :conflict
+      else
+        render json: {
+                 error: "state_corrupted",
+                 message: I18n.t("shared_edits.errors.state_corrupted"),
+               },
+               status: :unprocessable_entity
+      end
+    end
+
+    def health
+      guardian.ensure_can_toggle_shared_edits!
+
+      post = Post.find(params[:post_id].to_i)
+      health = StateValidator.health_check(post.id)
+
+      render json: health
+    end
+
+    def recover
+      guardian.ensure_can_toggle_shared_edits!
+
+      post = Post.find(params[:post_id].to_i)
+      result = StateValidator.recover_from_post_raw(post.id, force: params[:force] == "true")
+
+      if result[:success]
+        # Notify connected clients to resync
+        post.publish_message!(
+          "/shared_edits/#{post.id}",
+          { action: "resync", version: result[:new_version] },
+        )
+        render json: result
+      else
+        render json: result, status: :unprocessable_entity
+      end
+    end
+
+    def reset
+      guardian.ensure_can_toggle_shared_edits!
+
+      post = Post.find(params[:post_id].to_i)
+      new_version = SharedEditRevision.reset_history!(post.id)
+
+      # Notify connected clients to resync
+      post.publish_message!("/shared_edits/#{post.id}", { action: "resync", version: new_version })
+
+      render json: { success: true, version: new_version }
     end
 
     protected

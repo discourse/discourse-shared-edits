@@ -227,5 +227,221 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       post1.reload
       expect(post1.raw[0..3]).to eq("wxyz")
     end
+
+    it "handles corrupted state with automatic recovery" do
+      # Corrupt the state
+      revision = SharedEditRevision.where(post_id: post1.id).first
+      revision.update_column(:raw, Base64.strict_encode64("corrupted data"))
+
+      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: "some_update" }
+
+      expect(response.status).to eq(409)
+      expect(response.parsed_body["error"]).to eq("state_recovered")
+      expect(response.parsed_body["recovered_version"]).to eq(1)
+    end
+  end
+
+  describe "#health" do
+    context "when admin" do
+      before do
+        sign_in admin
+        SharedEditRevision.toggle_shared_edits!(post1.id, true)
+      end
+
+      it "returns health status for a post" do
+        get "/shared_edits/p/#{post1.id}/health"
+
+        expect(response.status).to eq(200)
+        body = response.parsed_body
+        expect(body["healthy"]).to eq(true)
+        expect(body["state"]).to eq("initialized")
+        expect(body["current_text"]).to eq(post1.raw)
+      end
+
+      it "detects corrupted state" do
+        revision = SharedEditRevision.where(post_id: post1.id).first
+        revision.update_column(:raw, Base64.strict_encode64("corrupted"))
+
+        get "/shared_edits/p/#{post1.id}/health"
+
+        expect(response.status).to eq(200)
+        body = response.parsed_body
+        expect(body["healthy"]).to eq(false)
+        expect(body["errors"]).not_to be_empty
+      end
+
+      it "returns not_initialized for posts without shared edits" do
+        post2 = Fabricate(:post)
+
+        get "/shared_edits/p/#{post2.id}/health"
+
+        expect(response.status).to eq(200)
+        body = response.parsed_body
+        expect(body["state"]).to eq("not_initialized")
+      end
+    end
+
+    context "when regular user" do
+      before { sign_in user }
+
+      it "returns 403" do
+        get "/shared_edits/p/#{post1.id}/health"
+        expect(response.status).to eq(403)
+      end
+    end
+  end
+
+  describe "#recover" do
+    context "when admin" do
+      before do
+        sign_in admin
+        SharedEditRevision.toggle_shared_edits!(post1.id, true)
+      end
+
+      it "recovers corrupted state" do
+        revision = SharedEditRevision.where(post_id: post1.id).first
+        revision.update_column(:raw, Base64.strict_encode64("corrupted"))
+
+        messages =
+          MessageBus.track_publish("/shared_edits/#{post1.id}") do
+            post "/shared_edits/p/#{post1.id}/recover"
+          end
+
+        expect(response.status).to eq(200)
+        body = response.parsed_body
+        expect(body["success"]).to eq(true)
+
+        expect(messages.length).to eq(1)
+        expect(messages.first.data[:action]).to eq("resync")
+      end
+
+      it "refuses to recover healthy state without force" do
+        post "/shared_edits/p/#{post1.id}/recover"
+
+        expect(response.status).to eq(422)
+        body = response.parsed_body
+        expect(body["success"]).to eq(false)
+        expect(body["message"]).to include("healthy")
+      end
+
+      it "recovers healthy state with force parameter" do
+        post "/shared_edits/p/#{post1.id}/recover", params: { force: "true" }
+
+        expect(response.status).to eq(200)
+        body = response.parsed_body
+        expect(body["success"]).to eq(true)
+      end
+
+      it "returns 404 for non-existent post" do
+        post "/shared_edits/p/999999/recover"
+        expect(response.status).to eq(404)
+      end
+    end
+
+    context "when regular user" do
+      before { sign_in user }
+
+      it "returns 403" do
+        post "/shared_edits/p/#{post1.id}/recover"
+        expect(response.status).to eq(403)
+      end
+    end
+  end
+
+  describe "#latest with automatic recovery" do
+    before do
+      sign_in user
+      SharedEditRevision.toggle_shared_edits!(post1.id, true)
+    end
+
+    it "automatically recovers corrupted state on access" do
+      revision = SharedEditRevision.where(post_id: post1.id).first
+      revision.update_column(:raw, Base64.strict_encode64("corrupted"))
+
+      get "/shared_edits/p/#{post1.id}"
+
+      expect(response.status).to eq(200)
+      body = response.parsed_body
+      expect(body["raw"]).to eq(post1.raw)
+      expect(body["version"]).to eq(1)
+    end
+  end
+
+  describe "#reset" do
+    def latest_state_for(post)
+      SharedEditRevision.where(post_id: post.id).order("version desc").limit(1).pluck(:raw).first
+    end
+
+    context "when admin" do
+      before do
+        sign_in admin
+        SharedEditRevision.toggle_shared_edits!(post1.id, true)
+      end
+
+      it "resets history and notifies clients" do
+        # Make some edits to build up history
+        state = latest_state_for(post1)
+        update = DiscourseSharedEdits::Yjs.update_from_state(state, "Edit 1")
+        SharedEditRevision.revise!(
+          post_id: post1.id,
+          user_id: admin.id,
+          client_id: "test",
+          update: update,
+        )
+
+        state = latest_state_for(post1)
+        update = DiscourseSharedEdits::Yjs.update_from_state(state, "Edit 2")
+        SharedEditRevision.revise!(
+          post_id: post1.id,
+          user_id: admin.id,
+          client_id: "test",
+          update: update,
+        )
+
+        expect(SharedEditRevision.where(post_id: post1.id).count).to eq(3)
+
+        messages =
+          MessageBus.track_publish("/shared_edits/#{post1.id}") do
+            post "/shared_edits/p/#{post1.id}/reset"
+          end
+
+        expect(response.status).to eq(200)
+        body = response.parsed_body
+        expect(body["success"]).to eq(true)
+        expect(body["version"]).to eq(1)
+
+        expect(SharedEditRevision.where(post_id: post1.id).count).to eq(1)
+
+        expect(messages.length).to eq(1)
+        expect(messages.first.data[:action]).to eq("resync")
+      end
+
+      it "commits pending changes before reset" do
+        state = latest_state_for(post1)
+        new_content = "New content from edit"
+        update = DiscourseSharedEdits::Yjs.update_from_state(state, new_content)
+        SharedEditRevision.revise!(
+          post_id: post1.id,
+          user_id: admin.id,
+          client_id: "test",
+          update: update,
+        )
+
+        post "/shared_edits/p/#{post1.id}/reset"
+
+        expect(response.status).to eq(200)
+        post1.reload
+        expect(post1.raw).to eq(new_content)
+      end
+    end
+
+    context "when regular user" do
+      before { sign_in user }
+
+      it "returns 403" do
+        post "/shared_edits/p/#{post1.id}/reset"
+        expect(response.status).to eq(403)
+      end
+    end
   end
 end

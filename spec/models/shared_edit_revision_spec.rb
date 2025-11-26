@@ -20,7 +20,7 @@ require_dependency Rails.root.join(
                      "discourse-shared-edits",
                      "db",
                      "migrate",
-                     "20251124000000_resize_shared_edit_columns",
+                     "20251124000123_resize_shared_edit_columns",
                    )
 
 RSpec.describe SharedEditRevision do

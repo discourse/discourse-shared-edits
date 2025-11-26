@@ -23,6 +23,7 @@ after_initialize do
   end
 
   require_relative "lib/discourse_shared_edits/yjs"
+  require_relative "lib/discourse_shared_edits/state_validator"
   require_relative "app/models/shared_edit_revision"
   require_relative "app/controllers/discourse_shared_edits/revision_controller"
   require_relative "app/jobs/commit_shared_revision"
@@ -34,6 +35,9 @@ after_initialize do
     put "/p/:post_id" => "revision#revise"
     get "/p/:post_id" => "revision#latest"
     put "/p/:post_id/commit" => "revision#commit"
+    get "/p/:post_id/health" => "revision#health"
+    post "/p/:post_id/recover" => "revision#recover"
+    post "/p/:post_id/reset" => "revision#reset"
   end
 
   Discourse::Application.routes.append { mount ::DiscourseSharedEdits::Engine, at: "/shared_edits" }
