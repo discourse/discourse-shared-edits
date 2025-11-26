@@ -111,10 +111,6 @@ function transformSelection(selection, delta) {
   return { start, end };
 }
 
-/**
- * Coordinates collaborative post editing with Yjs and the Discourse message bus.
- * @class SharedEditManager
- */
 export default class SharedEditManager extends Service {
   @service composer;
   @service messageBus;
@@ -126,19 +122,14 @@ export default class SharedEditManager extends Service {
   pendingUpdates = [];
   suppressComposerChange = false;
   textObserver = null;
+  /** @type {Promise<void>|null} - for eslint */
   inFlightRequest = null;
   #pendingRelativeSelection = null;
   #isSelecting = false;
   #selectionListenersAttached = false;
   #skippedUpdatesDuringSelection = false;
 
-  /**
-   * Apply updates received from the message bus.
-   * @param {{client_id: string, update: string, action?: string, version?: number}} message
-   * @returns {void}
-   */
   #onRemoteMessage = (message) => {
-    // Handle resync command from server (e.g., after recovery)
     if (message.action === "resync") {
       this.#handleResync();
       return;
@@ -148,8 +139,6 @@ export default class SharedEditManager extends Service {
       return;
     }
 
-    // Only capture relative selection if not actively selecting.
-    // During selection, we use #selectionStartRelative captured on mousedown.
     if (!this.#isSelecting) {
       this.#pendingRelativeSelection = this.#captureRelativeSelection();
     }
@@ -158,12 +147,6 @@ export default class SharedEditManager extends Service {
     window.Y.applyUpdate(this.doc, update, "remote");
   };
 
-  /**
-   * Queue outbound updates generated locally so they can be batched to the server.
-   * @param {Uint8Array} update
-   * @param {unknown} origin
-   * @returns {void}
-   */
   #handleDocUpdate = (update, origin) => {
     if (origin !== this) {
       return;
@@ -173,19 +156,11 @@ export default class SharedEditManager extends Service {
     this.#sendUpdatesThrottled();
   };
 
-  /**
-   * Handle mousedown on textarea - user may be starting a selection drag.
-   * @returns {void}
-   */
   #onTextareaMouseDown = () => {
     this.#isSelecting = true;
     this.#skippedUpdatesDuringSelection = false;
   };
 
-  /**
-   * Handle mouseup - user finished selecting. Sync textarea if updates were skipped.
-   * @returns {void}
-   */
   #onTextareaMouseUp = () => {
     const hadSkippedUpdates = this.#skippedUpdatesDuringSelection;
 
@@ -206,10 +181,6 @@ export default class SharedEditManager extends Service {
     }
   };
 
-  /**
-   * Get current textarea selection.
-   * @returns {{start: number, end: number}|null}
-   */
   #getTextareaSelection() {
     const textarea = document.querySelector(TEXTAREA_SELECTOR);
     if (!textarea) {
@@ -218,11 +189,6 @@ export default class SharedEditManager extends Service {
     return { start: textarea.selectionStart, end: textarea.selectionEnd };
   }
 
-  /**
-   * Sync textarea content after selection is complete, preserving selection position.
-   * @param {{start: number, end: number}|null} oldSelection - Selection in old content coordinates
-   * @returns {void}
-   */
   #syncTextareaAfterSelection(oldSelection) {
     const textarea = document.querySelector(TEXTAREA_SELECTOR);
     if (!textarea || !this.text) {
@@ -272,13 +238,6 @@ export default class SharedEditManager extends Service {
     }
   }
 
-  /**
-   * Transform selection coordinates from old text to new text based on diff.
-   * @param {string} oldText
-   * @param {string} newText
-   * @param {{start: number, end: number}} selection
-   * @returns {{start: number, end: number}}
-   */
   #transformSelectionThroughDiff(oldText, newText, selection) {
     // Find common prefix length
     let prefixLen = 0;
@@ -323,10 +282,6 @@ export default class SharedEditManager extends Service {
     };
   }
 
-  /**
-   * Handle a resync command by reloading the document state from the server.
-   * @returns {Promise<void>}
-   */
   async #handleResync() {
     const postId = this.currentPostId || this.#postId;
     if (!postId) {
@@ -344,10 +299,6 @@ export default class SharedEditManager extends Service {
     }
   }
 
-  /**
-   * Start syncing the current composer with the shared Yjs document for the post.
-   * @returns {Promise<void>}
-   */
   async subscribe() {
     try {
       const postId = this.#postId;
@@ -375,10 +326,6 @@ export default class SharedEditManager extends Service {
     }
   }
 
-  /**
-   * Finalize the shared edit session and persist the composed content back to the post.
-   * @returns {Promise<void>}
-   */
   async commit() {
     const postId = this.currentPostId || this.#postId;
 
@@ -403,12 +350,6 @@ export default class SharedEditManager extends Service {
     }
   }
 
-  /**
-   * Prepare a Yjs document for the session using the latest server state.
-   * @param {string} state base64 encoded Yjs update representing current state
-   * @param {string} raw fallback raw post text for empty states
-   * @returns {void}
-   */
   async #setupDoc(state, raw) {
     this.#teardownDoc();
 
@@ -437,10 +378,6 @@ export default class SharedEditManager extends Service {
     this.suppressComposerChange = false;
   }
 
-  /**
-   * Remove observers and clear the current Yjs document.
-   * @returns {void}
-   */
   #teardownDoc() {
     if (this.text && this.textObserver) {
       this.text.unobserve(this.textObserver);
@@ -457,10 +394,6 @@ export default class SharedEditManager extends Service {
     this.textObserver = null;
   }
 
-  /**
-   * Attach listeners to track active selection state on the textarea.
-   * @returns {void}
-   */
   #attachSelectionListeners() {
     if (this.#selectionListenersAttached) {
       return;
@@ -477,10 +410,6 @@ export default class SharedEditManager extends Service {
     this.#selectionListenersAttached = true;
   }
 
-  /**
-   * Remove selection tracking listeners.
-   * @returns {void}
-   */
   #detachSelectionListeners() {
     if (!this.#selectionListenersAttached) {
       return;
@@ -495,17 +424,10 @@ export default class SharedEditManager extends Service {
     this.#isSelecting = false;
   }
 
-  /**
-   * @returns {number|undefined} id of the post currently being edited
-   */
   get #postId() {
     return this.composer.model?.post.id;
   }
 
-  /**
-   * Reflect composer text changes into the shared Yjs document.
-   * @returns {void}
-   */
   #onComposerChange() {
     if (!this.composer.model || !this.text || this.suppressComposerChange) {
       return;
@@ -521,12 +443,6 @@ export default class SharedEditManager extends Service {
     this.doc.transact(() => applyDiff(this.text, current, next), this);
   }
 
-  /**
-   * Update composer text and selection when the shared document changes.
-   * @param {import("yjs").YTextEvent} event
-   * @param {import("yjs").Transaction} transaction
-   * @returns {void}
-   */
   #handleTextChange(event, transaction) {
     if (transaction?.origin === this) {
       return;
@@ -579,7 +495,7 @@ export default class SharedEditManager extends Service {
         textarea.selectionEnd = adjustedSelection.end;
       }
 
-      if (scrollTop !== undefined) {
+      if (scrollTop !== undefined && textarea.scrollTop !== scrollTop) {
         window.requestAnimationFrame(() => {
           textarea.scrollTop = scrollTop;
         });
@@ -587,10 +503,6 @@ export default class SharedEditManager extends Service {
     }
   }
 
-  /**
-   * Capture the current selection as Yjs relative positions so it survives remote updates.
-   * @returns {{ start: import("yjs").RelativePosition, end: import("yjs").RelativePosition, scrollTop?: number }|null}
-   */
   #captureRelativeSelection() {
     const textarea = document.querySelector(TEXTAREA_SELECTOR);
 
@@ -618,11 +530,6 @@ export default class SharedEditManager extends Service {
     };
   }
 
-  /**
-   * Convert previously captured relative selection back to absolute indexes.
-   * @param {{ start: import("yjs").RelativePosition, end: import("yjs").RelativePosition, scrollTop?: number }|null} rel
-   * @returns {{ start: number, end: number, scrollTop?: number }|null}
-   */
   #absoluteSelectionFromRelative(rel) {
     if (!rel) {
       return null;
@@ -655,18 +562,10 @@ export default class SharedEditManager extends Service {
     };
   }
 
-  /**
-   * Debounced enqueue of outbound updates to reduce request volume.
-   * @returns {void}
-   */
   #sendUpdatesThrottled() {
     debounce(this, this.#sendUpdates, THROTTLE_SAVE);
   }
 
-  /**
-   * Immediately send any queued updates before shutting down the session.
-   * @returns {Promise<void>}
-   */
   async #flushPendingUpdates() {
     if (this.inFlightRequest) {
       await this.inFlightRequest;
@@ -681,11 +580,6 @@ export default class SharedEditManager extends Service {
     }
   }
 
-  /**
-   * Send merged Yjs updates to the server.
-   * @param {boolean} immediate
-   * @returns {Promise<void>}
-   */
   async #sendUpdates(immediate = false) {
     const postId = this.currentPostId || this.#postId;
 
@@ -723,7 +617,6 @@ export default class SharedEditManager extends Service {
 
       await this.inFlightRequest;
     } catch (e) {
-      // Handle state recovery response (409 Conflict)
       if (
         e.jqXHR?.status === 409 &&
         e.jqXHR?.responseJSON?.error === "state_recovered"
