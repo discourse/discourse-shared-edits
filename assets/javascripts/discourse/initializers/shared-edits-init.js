@@ -1,15 +1,43 @@
+import { htmlSafe } from "@ember/template";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import { withPluginApi } from "discourse/lib/plugin-api";
-import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
 import { USER_OPTION_COMPOSITION_MODES } from "discourse/lib/constants";
+import { iconHTML } from "discourse/lib/icon-library";
+import { withPluginApi } from "discourse/lib/plugin-api";
+import {
+  registerCustomizationCallback,
+  SAVE_ICONS,
+  SAVE_LABELS,
+} from "discourse/models/composer";
 import SharedEditButton from "../components/shared-edit-button";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 
+function formatSharedEditActionTitle(model) {
+  if (model.action !== SHARED_EDIT_ACTION) {
+    return;
+  }
+
+  const opts = model.replyOptions;
+  if (!opts?.userAvatar || !opts?.userLink || !opts?.postLink) {
+    return;
+  }
+
+  return htmlSafe(`
+    ${iconHTML("far-pen-to-square", { title: "shared_edits.composer_title" })}
+    <a class="post-link" href="${opts.postLink.href}">${opts.postLink.anchor}</a>
+    ${opts.userAvatar}
+    <span class="username">${opts.userLink.anchor}</span>
+  `);
+}
+
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil";
+
+  registerCustomizationCallback({
+    actionTitle: formatSharedEditActionTitle,
+  });
 
   // Force markdown mode when in shared edit mode
   // This disables the rich text editor and hides the toggle
