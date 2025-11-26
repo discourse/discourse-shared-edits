@@ -155,33 +155,53 @@ class SharedEditRevision < ActiveRecord::Base
     [latest.version, DiscourseSharedEdits::Yjs.text_from_state(latest.raw)]
   end
 
+  MAX_REVISION_RETRIES = 3
+
   def self.revise!(post_id:, user_id:, client_id:, update:)
-    SharedEditRevision.transaction do
-      latest = SharedEditRevision.where(post_id: post_id).lock.order("version desc").first
-      raise StandardError, "shared edits not initialized" if !latest
+    retries = 0
 
-      applied = DiscourseSharedEdits::StateValidator.safe_apply_update(post_id, latest.raw, update)
+    begin
+      SharedEditRevision.transaction do
+        latest = SharedEditRevision.where(post_id: post_id).lock.order("version desc").first
+        raise StandardError, "shared edits not initialized" if !latest
 
-      revision =
-        SharedEditRevision.create!(
-          post_id: post_id,
-          user_id: user_id,
+        applied =
+          DiscourseSharedEdits::StateValidator.safe_apply_update(post_id, latest.raw, update)
+
+        revision =
+          SharedEditRevision.create!(
+            post_id: post_id,
+            user_id: user_id,
+            client_id: client_id,
+            revision: update,
+            raw: applied[:state],
+            version: latest.version + 1,
+          )
+
+        post = Post.find(post_id)
+        message = {
+          version: revision.version,
+          update: update,
           client_id: client_id,
-          revision: update,
-          raw: applied[:state],
-          version: latest.version + 1,
+          user_id: user_id,
+        }
+        post.publish_message!("/shared_edits/#{post.id}", message)
+
+        [revision.version, update]
+      end
+    rescue ActiveRecord::RecordNotUnique => e
+      retries += 1
+      if retries < MAX_REVISION_RETRIES
+        Rails.logger.warn(
+          "[SharedEdits] Version conflict for post #{post_id}, retry #{retries}/#{MAX_REVISION_RETRIES}",
         )
-
-      post = Post.find(post_id)
-      message = {
-        version: revision.version,
-        update: update,
-        client_id: client_id,
-        user_id: user_id,
-      }
-      post.publish_message!("/shared_edits/#{post.id}", message)
-
-      [revision.version, update]
+        retry
+      else
+        Rails.logger.error(
+          "[SharedEdits] Version conflict for post #{post_id} after #{MAX_REVISION_RETRIES} retries: #{e.message}",
+        )
+        raise
+      end
     end
   rescue MiniRacer::RuntimeError, MiniRacer::ParseError => e
     raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(

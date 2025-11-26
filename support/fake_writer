@@ -1,0 +1,460 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Simulates a user typing in a shared edit session.
+# Useful for testing that shared edits work correctly.
+#
+# Usage:
+#   plugins/discourse-shared-edits/support/fake_writer POST_ID [OPTIONS]
+#
+# Options:
+#   --speed=SPEED     Typing speed: slow, normal, fast (default: normal)
+#   --mode=MODE       Edit mode: append, typewriter, random (default: typewriter)
+#   --user=USER       User ID or username to write as (default: system user)
+#   --cursor=POS      Cursor position: number, 'start', or 'end' (default: end)
+#   --marker=CHAR     Cursor marker character (default: ▌)
+#   --reset           Reset shared edit state before starting
+#
+# Examples:
+#   plugins/discourse-shared-edits/support/fake_writer 123
+#   plugins/discourse-shared-edits/support/fake_writer 123 --speed=fast --cursor=0
+#   plugins/discourse-shared-edits/support/fake_writer 123 --user=admin --cursor=start
+#
+# Cursor Tracking:
+#   The typewriter mode uses a visible cursor marker (▌) to track position.
+#   This lets you test OT by typing after the marker while the robot types before it.
+#   The marker moves naturally with the text through Yjs operational transformation.
+
+discourse_root = File.expand_path("../../../..", __FILE__)
+Dir.chdir(discourse_root) do # rubocop:disable Discourse/NoChdir
+  require File.join(discourse_root, "config/environment")
+
+  module FakeWriter
+    PHRASES = [
+      "The quick brown fox jumps over the lazy dog. ",
+      "Hello world! ",
+      "Testing shared edits... ",
+      "This is a collaborative document. ",
+      "Multiple users can edit simultaneously. ",
+      "Real-time synchronization in action! ",
+      "Lorem ipsum dolor sit amet. ",
+      "Sphinx of black quartz, judge my vow. ",
+      "Pack my box with five dozen liquor jugs. ",
+      "How vexingly quick daft zebras jump! ",
+    ].freeze
+
+    SPEEDS = {
+      "slow" => { char_delay: 0.15..0.3, phrase_delay: 1.0..2.0 },
+      "normal" => { char_delay: 0.05..0.15, phrase_delay: 0.5..1.0 },
+      "fast" => { char_delay: 0.01..0.05, phrase_delay: 0.1..0.3 },
+    }.freeze
+
+    MODES = %w[append typewriter random].freeze
+    DEFAULT_MARKER = "▌"
+
+    class << self
+      def parse_args(args)
+        options = {
+          speed: "normal",
+          mode: "typewriter",
+          reset: false,
+          user: nil,
+          cursor: "end",
+          marker: DEFAULT_MARKER,
+        }
+
+        post_id = nil
+        args.each do |arg|
+          case arg
+          when /^--speed=(.+)$/
+            options[:speed] = $1
+          when /^--mode=(.+)$/
+            options[:mode] = $1
+          when /^--user=(.+)$/
+            options[:user] = $1
+          when /^--cursor=(.+)$/
+            options[:cursor] = $1
+          when /^--marker=(.+)$/
+            options[:marker] = $1
+          when "--reset"
+            options[:reset] = true
+          when /^\d+$/
+            post_id = arg.to_i
+          end
+        end
+
+        [post_id, options]
+      end
+
+      def random_delay(range)
+        sleep(rand(range))
+      end
+
+      def get_current_text(post_id)
+        version, text = SharedEditRevision.latest_raw(post_id)
+        [version, text || ""]
+      end
+
+      def apply_edit(post_id, user_id, new_text)
+        latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+        return nil unless latest
+
+        update = DiscourseSharedEdits::Yjs.update_from_state(latest.raw, new_text)
+        SharedEditRevision.revise!(
+          post_id: post_id,
+          user_id: user_id,
+          client_id: "fake_writer",
+          update: update,
+        )
+      rescue StandardError => e
+        puts "\n[ERROR] Failed to apply edit: #{e.message}"
+        nil
+      end
+
+      def find_marker_position(text, marker)
+        text.index(marker)
+      end
+
+      def insert_at_marker(text, marker, insert_text)
+        pos = find_marker_position(text, marker)
+        return nil if pos.nil?
+
+        text.dup.insert(pos, insert_text)
+      end
+
+      def calculate_initial_cursor(text, cursor_option)
+        case cursor_option
+        when "start"
+          0
+        when "end"
+          text.length
+        when /^-?\d+$/
+          pos = cursor_option.to_i
+          pos = 0 if pos < 0
+          pos = text.length if pos > text.length
+          pos
+        else
+          text.length
+        end
+      end
+
+      def setup_cursor(post_id, user_id, text, options)
+        marker = options[:marker]
+
+        # Check if marker already exists
+        existing_pos = find_marker_position(text, marker)
+        if existing_pos
+          puts "Found existing cursor marker at position #{existing_pos}"
+          return text
+        end
+
+        # Insert marker at specified position
+        cursor_pos = calculate_initial_cursor(text, options[:cursor])
+        new_text = text.dup.insert(cursor_pos, marker)
+
+        result = apply_edit(post_id, user_id, new_text)
+        if result
+          puts "Inserted cursor marker '#{marker}' at position #{cursor_pos}"
+          new_text
+        else
+          warn "Failed to insert cursor marker"
+          exit 1
+        end
+      end
+
+      def typewriter_mode(post_id, user_id, speed_config, options)
+        marker = options[:marker]
+        puts "[typewriter] Typing at cursor marker '#{marker}'..."
+        puts "  (Text inserted AFTER the marker will stay after it - test OT!)"
+        puts ""
+
+        phrase_index = 0
+
+        loop do
+          phrase = PHRASES[phrase_index % PHRASES.length]
+          phrase_index += 1
+
+          phrase.each_char do |char|
+            _version, current_text = get_current_text(post_id)
+
+            marker_pos = find_marker_position(current_text, marker)
+            if marker_pos.nil?
+              puts "\n[WARN] Cursor marker lost! Re-inserting at end..."
+              new_text = current_text + marker
+              apply_edit(post_id, user_id, new_text)
+              next
+            end
+
+            new_text = insert_at_marker(current_text, marker, char)
+            result = apply_edit(post_id, user_id, new_text)
+
+            if result
+              print char
+              $stdout.flush
+            end
+
+            random_delay(speed_config[:char_delay])
+          end
+
+          puts
+          random_delay(speed_config[:phrase_delay])
+        end
+      end
+
+      def append_mode(post_id, user_id, speed_config, options)
+        marker = options[:marker]
+        puts "[append] Appending phrases at cursor marker '#{marker}'..."
+        puts ""
+
+        loop do
+          phrase = PHRASES.sample
+
+          _version, current_text = get_current_text(post_id)
+
+          marker_pos = find_marker_position(current_text, marker)
+          if marker_pos.nil?
+            puts "[WARN] Cursor marker lost! Re-inserting at end..."
+            new_text = current_text + marker
+            apply_edit(post_id, user_id, new_text)
+            next
+          end
+
+          new_text = insert_at_marker(current_text, marker, phrase)
+          result = apply_edit(post_id, user_id, new_text)
+
+          puts "+ #{phrase.strip}" if result
+
+          random_delay(speed_config[:phrase_delay])
+        end
+      end
+
+      def random_mode(post_id, user_id, speed_config, options)
+        marker = options[:marker]
+        puts "[random] Random edits (marker '#{marker}' shows cursor position)..."
+        puts ""
+
+        loop do
+          _version, current_text = get_current_text(post_id)
+
+          # Remove marker temporarily for random operations
+          marker_pos = find_marker_position(current_text, marker)
+          text_without_marker = marker_pos ? current_text.sub(marker, "") : current_text
+
+          action = %i[insert delete replace].sample
+          new_text_without_marker = perform_random_action(action, text_without_marker)
+
+          if new_text_without_marker != text_without_marker
+            # Re-insert marker at same relative position (or end if position lost)
+            new_marker_pos = marker_pos ? [marker_pos, new_text_without_marker.length].min : new_text_without_marker.length
+            new_text = new_text_without_marker.dup.insert(new_marker_pos, marker)
+
+            result = apply_edit(post_id, user_id, new_text)
+            puts result ? "✓" : "✗"
+          else
+            puts "skipped"
+          end
+
+          random_delay(speed_config[:phrase_delay])
+        end
+      end
+
+      def perform_random_action(action, current_text)
+        case action
+        when :insert
+          perform_insert(current_text)
+        when :delete
+          perform_delete(current_text)
+        when :replace
+          perform_replace(current_text)
+        end
+      end
+
+      def perform_insert(current_text)
+        pos = rand(0..current_text.length)
+        insert_text = PHRASES.sample.split.sample(rand(1..3)).join(" ") + " "
+        print "[insert@#{pos}] \"#{insert_text.strip}\" "
+        current_text.dup.insert(pos, insert_text)
+      end
+
+      def perform_delete(current_text)
+        if current_text.length > 10
+          start_pos = rand(0...[current_text.length - 5, 0].max)
+          delete_len = rand(1..[10, current_text.length - start_pos].min)
+          deleted = current_text[start_pos, delete_len]
+          print "[delete@#{start_pos}] \"#{deleted}\" "
+          current_text.dup.tap { |s| s[start_pos, delete_len] = "" }
+        else
+          print "[skip delete - text too short] "
+          current_text
+        end
+      end
+
+      def perform_replace(current_text)
+        if current_text.length > 5
+          start_pos = rand(0...[current_text.length - 3, 0].max)
+          replace_len = rand(1..[5, current_text.length - start_pos].min)
+          replacement = PHRASES.sample.split.sample || "X"
+          old_text_segment = current_text[start_pos, replace_len]
+          print "[replace@#{start_pos}] \"#{old_text_segment}\" -> \"#{replacement}\" "
+          current_text.dup.tap { |s| s[start_pos, replace_len] = replacement }
+        else
+          print "[skip replace - text too short] "
+          current_text
+        end
+      end
+
+      def run(args)
+        post_id, options = parse_args(args)
+
+        if post_id.nil? || post_id == 0
+          print_usage
+          exit 1
+        end
+
+        validate_options!(options)
+
+        post = Post.find_by(id: post_id)
+        if post.nil?
+          warn "Post #{post_id} not found"
+          exit 1
+        end
+
+        print_banner(post, options)
+
+        user = find_user(options[:user])
+        puts "Writing as: #{user.username} (id: #{user.id})"
+
+        setup_shared_edits(post, options)
+
+        _version, text = get_current_text(post_id)
+        text = setup_cursor(post_id, user.id, text, options)
+
+        version, text = get_current_text(post_id)
+        puts "Current version: #{version}"
+        puts "Current text length: #{text.length} chars (including marker)"
+        puts "=" * 60
+        puts "Starting simulation (Ctrl+C to stop)..."
+        puts ""
+
+        run_mode(post_id, user.id, options)
+      rescue Interrupt
+        handle_interrupt(post_id, options)
+      end
+
+      private
+
+      def find_user(user_option)
+        if user_option.nil?
+          Discourse.system_user || User.where(admin: true).first
+        elsif user_option.match?(/^-?\d+$/)
+          user = User.find_by(id: user_option.to_i)
+          if user.nil?
+            warn "User with ID #{user_option} not found"
+            exit 1
+          end
+          user
+        else
+          user = User.find_by(username: user_option)
+          if user.nil?
+            warn "User '#{user_option}' not found"
+            exit 1
+          end
+          user
+        end
+      end
+
+      def print_usage
+        warn "Usage: #{$PROGRAM_NAME} POST_ID [OPTIONS]"
+        warn ""
+        warn "Options:"
+        warn "  --speed=SPEED     slow, normal, fast (default: normal)"
+        warn "  --mode=MODE       append, typewriter, random (default: typewriter)"
+        warn "  --user=USER       User ID or username (default: system user)"
+        warn "  --cursor=POS      Cursor position: number, 'start', 'end' (default: end)"
+        warn "  --marker=CHAR     Cursor marker character (default: #{DEFAULT_MARKER})"
+        warn "  --reset           Reset shared edit state before starting"
+        warn ""
+        warn "Examples:"
+        warn "  #{$PROGRAM_NAME} 123"
+        warn "  #{$PROGRAM_NAME} 123 --speed=fast --cursor=start"
+        warn "  #{$PROGRAM_NAME} 123 --user=admin --cursor=0"
+        warn ""
+        warn "Cursor Tracking:"
+        warn "  The cursor marker shows where the robot is typing."
+        warn "  Type AFTER the marker to test that OT keeps positions stable."
+      end
+
+      def validate_options!(options)
+        if SPEEDS.exclude?(options[:speed])
+          warn "Invalid speed: #{options[:speed]}. Valid options: #{SPEEDS.keys.join(", ")}"
+          exit 1
+        end
+
+        if MODES.exclude?(options[:mode])
+          warn "Invalid mode: #{options[:mode]}. Valid options: #{MODES.join(", ")}"
+          exit 1
+        end
+      end
+
+      def print_banner(post, options)
+        puts "=" * 60
+        puts "Fake Writer - Shared Edits Simulator"
+        puts "=" * 60
+        puts "Post ID: #{post.id}"
+        puts "Post Title: #{post.topic&.title || "N/A"}"
+        puts "Speed: #{options[:speed]}"
+        puts "Mode: #{options[:mode]}"
+        puts "Cursor: #{options[:cursor]} (marker: #{options[:marker]})"
+        puts "=" * 60
+      end
+
+      def setup_shared_edits(post, options)
+        shared_edits_enabled = post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
+
+        if options[:reset]
+          puts "Resetting shared edit state..."
+          SharedEditRevision.toggle_shared_edits!(post.id, false) if shared_edits_enabled
+          SharedEditRevision.toggle_shared_edits!(post.id, true)
+          puts "Reset complete."
+        elsif !shared_edits_enabled
+          puts "Enabling shared edits on post..."
+          SharedEditRevision.toggle_shared_edits!(post.id, true)
+        else
+          puts "Shared edits already enabled."
+        end
+      end
+
+      def run_mode(post_id, user_id, options)
+        speed_config = SPEEDS[options[:speed]]
+
+        case options[:mode]
+        when "typewriter"
+          typewriter_mode(post_id, user_id, speed_config, options)
+        when "append"
+          append_mode(post_id, user_id, speed_config, options)
+        when "random"
+          random_mode(post_id, user_id, speed_config, options)
+        end
+      end
+
+      def handle_interrupt(post_id, options)
+        marker = options[:marker]
+        puts "\n"
+        puts "=" * 60
+        puts "Stopped by user."
+
+        version, text = get_current_text(post_id)
+        marker_pos = find_marker_position(text, marker)
+
+        puts "Final version: #{version}"
+        puts "Final text length: #{text.length} chars"
+        puts "Cursor marker position: #{marker_pos || "not found"}"
+        puts ""
+        puts "TIP: Remove the cursor marker '#{marker}' from the post when done."
+        puts "=" * 60
+      end
+    end
+  end
+
+  FakeWriter.run(ARGV)
+end

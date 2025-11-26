@@ -52,24 +52,90 @@ RSpec.describe DiscourseSharedEdits::Yjs do
       old_text = "Hello World"
       new_text = "Hello Universe"
 
-      update = described_class.update_from_text_change(old_text, new_text)
-      expect(update).to be_present
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
     end
 
     it "handles insertion at the beginning" do
       old_text = "World"
       new_text = "Hello World"
 
-      update = described_class.update_from_text_change(old_text, new_text)
-      expect(update).to be_present
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
     end
 
     it "handles deletion" do
       old_text = "Hello World"
       new_text = "World"
 
-      update = described_class.update_from_text_change(old_text, new_text)
-      expect(update).to be_present
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
+    end
+
+    it "handles insertion at the end" do
+      old_text = "Hello"
+      new_text = "Hello World"
+
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
+    end
+
+    it "handles complete replacement" do
+      old_text = "foo"
+      new_text = "bar"
+
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
+    end
+
+    it "handles emoji content" do
+      old_text = "Hello 😎"
+      new_text = "Hello 🎉 World"
+
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
+    end
+
+    it "handles empty to content" do
+      old_text = ""
+      new_text = "Hello World"
+
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
+    end
+
+    it "handles content to empty" do
+      old_text = "Hello World"
+      new_text = ""
+
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
+    end
+
+    it "handles multiline content" do
+      old_text = "Line 1\nLine 2\nLine 3"
+      new_text = "Line 1\nModified Line\nLine 3"
+
+      result = described_class.update_from_text_change(old_text, new_text)
+      applied = described_class.apply_update(result[:state], result[:update])
+
+      expect(applied[:text]).to eq(new_text)
     end
   end
 

@@ -244,9 +244,92 @@ RSpec.describe SharedEditRevision do
       post_id: post.id,
       user_id: user.id,
       client_id: user.id,
-      update: DiscourseSharedEdits::Yjs.update_from_text_change("Hello world", "Test"),
+      update: DiscourseSharedEdits::Yjs.update_from_text_change("Hello world", "Test")[:update],
     )
 
     expect(post.reload.raw).to eq("Hello world")
+  end
+
+  describe ".revise! version conflict handling" do
+    fab!(:user)
+    fab!(:post) { Fabricate(:post, user: user, raw: "Hello world") }
+
+    before { SharedEditRevision.init!(post) }
+
+    it "retries on version conflict and succeeds" do
+      state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "Hello world updated")
+      call_count = 0
+
+      allow(SharedEditRevision).to receive(:create!).and_wrap_original do |method, **args|
+        call_count += 1
+        if call_count == 1
+          raise ActiveRecord::RecordNotUnique.new("duplicate key value")
+        else
+          method.call(**args)
+        end
+      end
+
+      result =
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "test-client",
+          update: update,
+        )
+
+      expect(result).to be_present
+      expect(call_count).to eq(2)
+    end
+
+    it "raises after max retries exhausted" do
+      state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "Hello world updated")
+
+      allow(SharedEditRevision).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("duplicate key value"),
+      )
+
+      expect {
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "test-client",
+          update: update,
+        )
+      }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "handles concurrent revisions gracefully" do
+      state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
+      update1 = DiscourseSharedEdits::Yjs.update_from_state(state, "Change from client 1")
+      update2 = DiscourseSharedEdits::Yjs.update_from_state(state, "Change from client 2")
+
+      # Simulate two concurrent requests by having one succeed normally
+      result1 =
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "client-1",
+          update: update1,
+        )
+
+      # The second one should also succeed (applying to the new state)
+      result2 =
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "client-2",
+          update: update2,
+        )
+
+      expect(result1.first).to eq(2)
+      expect(result2.first).to eq(3)
+
+      # Both changes should be in the final state (Yjs merges them)
+      final_version, final_text = SharedEditRevision.latest_raw(post.id)
+      expect(final_version).to eq(3)
+      expect(final_text).to be_present
+    end
   end
 end

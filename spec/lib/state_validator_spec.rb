@@ -2,13 +2,6 @@
 
 require "rails_helper"
 RSpec.describe DiscourseSharedEdits::StateValidator do
-  before do
-    unless ActiveRecord::Base.connection.data_source_exists?(:shared_edit_revisions)
-      MigrateSharedEdits.new.up
-      ResizeSharedEditColumns.new.up
-    end
-  end
-
   describe ".validate_state" do
     it "returns valid for a properly encoded state" do
       state = DiscourseSharedEdits::Yjs.state_from_text("Hello world")[:state]
@@ -71,7 +64,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
     it "returns valid for a properly encoded update" do
       old_text = "Hello"
       new_text = "Hello world"
-      update = DiscourseSharedEdits::Yjs.update_from_text_change(old_text, new_text)
+      update = DiscourseSharedEdits::Yjs.update_from_text_change(old_text, new_text)[:update]
 
       result = described_class.validate_update(update)
 

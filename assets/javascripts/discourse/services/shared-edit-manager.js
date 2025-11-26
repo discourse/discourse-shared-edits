@@ -128,6 +128,9 @@ export default class SharedEditManager extends Service {
   textObserver = null;
   inFlightRequest = null;
   #pendingRelativeSelection = null;
+  #isSelecting = false;
+  #selectionListenersAttached = false;
+  #skippedUpdatesDuringSelection = false;
 
   /**
    * Apply updates received from the message bus.
@@ -145,7 +148,11 @@ export default class SharedEditManager extends Service {
       return;
     }
 
-    this.#pendingRelativeSelection = this.#captureRelativeSelection();
+    // Only capture relative selection if not actively selecting.
+    // During selection, we use #selectionStartRelative captured on mousedown.
+    if (!this.#isSelecting) {
+      this.#pendingRelativeSelection = this.#captureRelativeSelection();
+    }
 
     const update = base64ToUint8Array(message.update);
     window.Y.applyUpdate(this.doc, update, "remote");
@@ -165,6 +172,150 @@ export default class SharedEditManager extends Service {
     this.pendingUpdates.push(update);
     this.#sendUpdatesThrottled();
   };
+
+  /**
+   * Handle mousedown on textarea - user may be starting a selection drag.
+   * @returns {void}
+   */
+  #onTextareaMouseDown = () => {
+    this.#isSelecting = true;
+    this.#skippedUpdatesDuringSelection = false;
+  };
+
+  /**
+   * Handle mouseup - user finished selecting. Sync textarea if updates were skipped.
+   * @returns {void}
+   */
+  #onTextareaMouseUp = () => {
+    const wasSelecting = this.#isSelecting;
+    const hadSkippedUpdates = this.#skippedUpdatesDuringSelection;
+    const textareaSelection = this.#getTextareaSelection();
+
+    this.#isSelecting = false;
+    this.#skippedUpdatesDuringSelection = false;
+
+    // If we skipped updates while selecting, sync the textarea now
+    if (wasSelecting && hadSkippedUpdates) {
+      this.#syncTextareaAfterSelection(textareaSelection);
+    }
+  };
+
+  /**
+   * Get current textarea selection.
+   * @returns {{start: number, end: number}|null}
+   */
+  #getTextareaSelection() {
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+    if (!textarea) {
+      return null;
+    }
+    return { start: textarea.selectionStart, end: textarea.selectionEnd };
+  }
+
+  /**
+   * Sync textarea content after selection is complete, preserving selection position.
+   * @param {{start: number, end: number}|null} oldSelection - Selection in old content coordinates
+   * @returns {void}
+   */
+  #syncTextareaAfterSelection(oldSelection) {
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+    if (!textarea || !this.text) {
+      return;
+    }
+
+    const oldText = textarea.value;
+    const newText = this.text.toString();
+    const scrollTop = textarea.scrollTop;
+
+    // Transform the selection from old content coordinates to new content coordinates
+    let adjustedSelection = null;
+
+    if (oldSelection && oldText !== newText) {
+      adjustedSelection = this.#transformSelectionThroughDiff(
+        oldText,
+        newText,
+        oldSelection
+      );
+    } else if (oldSelection) {
+      adjustedSelection = oldSelection;
+    }
+
+    this.suppressComposerChange = true;
+    this.composer.model?.set("reply", newText);
+    this.suppressComposerChange = false;
+
+    textarea.value = newText;
+
+    if (adjustedSelection) {
+      // Clamp selection to valid range
+      const maxPos = newText.length;
+      textarea.selectionStart = Math.min(
+        Math.max(0, adjustedSelection.start),
+        maxPos
+      );
+      textarea.selectionEnd = Math.min(
+        Math.max(0, adjustedSelection.end),
+        maxPos
+      );
+    }
+
+    if (scrollTop !== undefined) {
+      window.requestAnimationFrame(() => {
+        textarea.scrollTop = scrollTop;
+      });
+    }
+  }
+
+  /**
+   * Transform selection coordinates from old text to new text based on diff.
+   * @param {string} oldText
+   * @param {string} newText
+   * @param {{start: number, end: number}} selection
+   * @returns {{start: number, end: number}}
+   */
+  #transformSelectionThroughDiff(oldText, newText, selection) {
+    // Find common prefix length
+    let prefixLen = 0;
+    const minLen = Math.min(oldText.length, newText.length);
+    while (prefixLen < minLen && oldText[prefixLen] === newText[prefixLen]) {
+      prefixLen++;
+    }
+
+    // Find common suffix length (but don't overlap with prefix)
+    let suffixLen = 0;
+    while (
+      suffixLen < oldText.length - prefixLen &&
+      suffixLen < newText.length - prefixLen &&
+      oldText[oldText.length - 1 - suffixLen] ===
+        newText[newText.length - 1 - suffixLen]
+    ) {
+      suffixLen++;
+    }
+
+    // The change region in old text is [prefixLen, oldText.length - suffixLen)
+    // The change region in new text is [prefixLen, newText.length - suffixLen)
+    const oldChangeEnd = oldText.length - suffixLen;
+    const newChangeEnd = newText.length - suffixLen;
+
+    const transformPos = (pos) => {
+      if (pos <= prefixLen) {
+        // Before the change region - no adjustment needed
+        return pos;
+      } else if (pos >= oldChangeEnd) {
+        // After the change region - shift by the length difference
+        return pos + (newChangeEnd - oldChangeEnd);
+      } else {
+        // Inside the change region - map to end of new change region
+        // (best guess - the old position no longer exists)
+        return newChangeEnd;
+      }
+    };
+
+    return {
+      start: transformPos(selection.start),
+      end: transformPos(selection.end),
+    };
+  }
 
   /**
    * Handle a resync command by reloading the document state from the server.
@@ -273,6 +424,8 @@ export default class SharedEditManager extends Service {
     this.text.observe(this.textObserver);
     this.doc.on("update", this.#handleDocUpdate);
 
+    this.#attachSelectionListeners();
+
     this.suppressComposerChange = true;
     this.composer.model.set("reply", this.text.toString());
     this.suppressComposerChange = false;
@@ -291,9 +444,49 @@ export default class SharedEditManager extends Service {
       this.doc.off("update", this.#handleDocUpdate);
     }
 
+    this.#detachSelectionListeners();
+
     this.doc = null;
     this.text = null;
     this.textObserver = null;
+  }
+
+  /**
+   * Attach listeners to track active selection state on the textarea.
+   * @returns {void}
+   */
+  #attachSelectionListeners() {
+    if (this.#selectionListenersAttached) {
+      return;
+    }
+
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+    if (!textarea) {
+      return;
+    }
+
+    textarea.addEventListener("mousedown", this.#onTextareaMouseDown);
+    // Use document for mouseup to catch releases outside the textarea
+    document.addEventListener("mouseup", this.#onTextareaMouseUp);
+    this.#selectionListenersAttached = true;
+  }
+
+  /**
+   * Remove selection tracking listeners.
+   * @returns {void}
+   */
+  #detachSelectionListeners() {
+    if (!this.#selectionListenersAttached) {
+      return;
+    }
+
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+    if (textarea) {
+      textarea.removeEventListener("mousedown", this.#onTextareaMouseDown);
+    }
+    document.removeEventListener("mouseup", this.#onTextareaMouseUp);
+    this.#selectionListenersAttached = false;
+    this.#isSelecting = false;
   }
 
   /**
@@ -330,6 +523,14 @@ export default class SharedEditManager extends Service {
    */
   #handleTextChange(event, transaction) {
     if (transaction?.origin === this) {
+      return;
+    }
+
+    // If user is actively selecting, skip the textarea update to avoid interrupting
+    // the native selection. The Yjs doc already has the update, and we'll sync
+    // the textarea on mouseup.
+    if (this.#isSelecting) {
+      this.#skippedUpdatesDuringSelection = true;
       return;
     }
 

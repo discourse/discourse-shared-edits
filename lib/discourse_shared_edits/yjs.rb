@@ -110,9 +110,10 @@ module DiscourseSharedEdits
 
             function updateFromTextChange(oldText, newText) {
               const doc = createDocWithText(oldText);
+              const initialState = encodeDocState(doc);
               const stateVector = YRef.encodeStateVector(doc);
               applyDiffToYText(doc.getText(TEXT_KEY), oldText || "", newText || "");
-              return Array.from(YRef.encodeStateAsUpdate(doc, stateVector));
+              return { state: initialState, update: Array.from(YRef.encodeStateAsUpdate(doc, stateVector)) };
             }
 
             function updateFromState(state, newText) {
@@ -144,7 +145,8 @@ module DiscourseSharedEdits
       end
 
       def update_from_text_change(old_text, new_text)
-        encode(context.call("updateFromTextChange", old_text, new_text))
+        result = context.call("updateFromTextChange", old_text, new_text)
+        { state: encode(result["state"]), update: encode(result["update"]) }
       end
 
       def update_from_state(state_b64, new_text)
