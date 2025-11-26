@@ -187,16 +187,22 @@ export default class SharedEditManager extends Service {
    * @returns {void}
    */
   #onTextareaMouseUp = () => {
-    const wasSelecting = this.#isSelecting;
     const hadSkippedUpdates = this.#skippedUpdatesDuringSelection;
-    const textareaSelection = this.#getTextareaSelection();
 
-    this.#isSelecting = false;
-    this.#skippedUpdatesDuringSelection = false;
-
-    // If we skipped updates while selecting, sync the textarea now
-    if (wasSelecting && hadSkippedUpdates) {
-      this.#syncTextareaAfterSelection(textareaSelection);
+    if (hadSkippedUpdates) {
+      // Keep #isSelecting true until after the browser has processed the click's
+      // selection change. Use requestAnimationFrame to defer capturing the selection
+      // so we get the correct post-click cursor position rather than the pre-click
+      // selection range.
+      requestAnimationFrame(() => {
+        const textareaSelection = this.#getTextareaSelection();
+        this.#isSelecting = false;
+        this.#skippedUpdatesDuringSelection = false;
+        this.#syncTextareaAfterSelection(textareaSelection);
+      });
+    } else {
+      this.#isSelecting = false;
+      this.#skippedUpdatesDuringSelection = false;
     }
   };
 
