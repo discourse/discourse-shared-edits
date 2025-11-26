@@ -10,6 +10,13 @@ acceptance(`Discourse Shared Edits | Composer`, function (needs) {
       helper.response({ success: "OK" })
     );
 
+    server.get("/posts/:id.json", () =>
+      helper.response({
+        id: 398,
+        raw: "initial post content",
+      })
+    );
+
     server.get("/shared_edits/p/:id", () =>
       helper.response({
         state: "",

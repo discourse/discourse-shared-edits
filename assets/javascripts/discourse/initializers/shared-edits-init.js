@@ -126,15 +126,25 @@ function initWithApi(api) {
           );
         }
 
-        _handleSharedEditOnPost(post) {
+        async _handleSharedEditOnPost(post) {
           const draftKey = post.get("topic.draft_key");
           const draftSequence = post.get("topic.draft_sequence");
+
+          let raw;
+          try {
+            const result = await ajax(`/posts/${post.id}.json`);
+            raw = result.raw;
+          } catch (e) {
+            popupAjaxError(e);
+            return;
+          }
 
           this.get("composer").open({
             post,
             action: SHARED_EDIT_ACTION,
             draftKey,
             draftSequence,
+            reply: raw,
           });
         }
       }
