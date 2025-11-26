@@ -2,6 +2,7 @@ import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
+import { USER_OPTION_COMPOSITION_MODES } from "discourse/lib/constants";
 import SharedEditButton from "../components/shared-edit-button";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
@@ -9,6 +10,18 @@ const SHARED_EDIT_ACTION = "sharedEdit";
 function initWithApi(api) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil";
+
+  // Force markdown mode when in shared edit mode
+  // This disables the rich text editor and hides the toggle
+  api.registerValueTransformer(
+    "composer-force-editor-mode",
+    ({ value, context }) => {
+      if (context.model?.action === SHARED_EDIT_ACTION) {
+        return USER_OPTION_COMPOSITION_MODES.markdown;
+      }
+      return value;
+    }
+  );
 
   customizePostMenu(api);
 
