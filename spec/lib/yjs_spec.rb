@@ -1,13 +1,6 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require_dependency Rails.root.join(
-                     "plugins",
-                     "discourse-shared-edits",
-                     "lib",
-                     "discourse_shared_edits",
-                     "yjs",
-                   )
 
 RSpec.describe DiscourseSharedEdits::Yjs do
   describe ".state_from_text" do

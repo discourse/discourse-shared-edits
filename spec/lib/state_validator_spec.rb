@@ -1,42 +1,6 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require_dependency Rails.root.join(
-                     "plugins",
-                     "discourse-shared-edits",
-                     "lib",
-                     "discourse_shared_edits",
-                     "yjs",
-                   )
-require_dependency Rails.root.join(
-                     "plugins",
-                     "discourse-shared-edits",
-                     "lib",
-                     "discourse_shared_edits",
-                     "state_validator",
-                   )
-require_dependency Rails.root.join(
-                     "plugins",
-                     "discourse-shared-edits",
-                     "app",
-                     "models",
-                     "shared_edit_revision",
-                   )
-require_dependency Rails.root.join(
-                     "plugins",
-                     "discourse-shared-edits",
-                     "db",
-                     "migrate",
-                     "20200721001123_migrate_shared_edits",
-                   )
-require_dependency Rails.root.join(
-                     "plugins",
-                     "discourse-shared-edits",
-                     "db",
-                     "migrate",
-                     "20251124000123_resize_shared_edit_columns",
-                   )
-
 RSpec.describe DiscourseSharedEdits::StateValidator do
   before do
     unless ActiveRecord::Base.connection.data_source_exists?(:shared_edit_revisions)
