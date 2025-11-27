@@ -36,6 +36,7 @@ class SharedEditRevision < ActiveRecord::Base
       post.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
     end
     post.save_custom_fields
+    post.publish_change_to_clients!(:acted)
   end
 
   def self.init!(post)
