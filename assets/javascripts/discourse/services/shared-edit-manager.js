@@ -1,4 +1,4 @@
-import { debounce } from "@ember/runloop";
+import { throttle } from "@ember/runloop";
 import Service, { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
@@ -568,7 +568,10 @@ export default class SharedEditManager extends Service {
   }
 
   #sendUpdatesThrottled() {
-    debounce(this, this.#sendUpdates, THROTTLE_SAVE);
+    // Use throttle instead of debounce so updates sync periodically during
+    // continuous typing, not just when typing stops. With immediate=true,
+    // the first call executes immediately, then at most once per THROTTLE_SAVE ms.
+    throttle(this, this.#sendUpdates, THROTTLE_SAVE, true);
   }
 
   async #flushPendingUpdates() {
