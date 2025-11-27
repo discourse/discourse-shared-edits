@@ -317,9 +317,14 @@ export default class SharedEditManager extends Service {
       this.#setupDoc(data.state, data.raw);
 
       this.addObserver("composer.model.reply", this, this.#onComposerChange);
+
+      // Subscribe starting from the message_bus_last_id returned with the state
+      // to ensure we don't miss any messages that arrived between fetching
+      // the state and subscribing
       this.messageBus.subscribe(
         `/shared_edits/${postId}`,
-        this.#onRemoteMessage
+        this.#onRemoteMessage,
+        data.message_bus_last_id ?? -1
       );
     } catch (e) {
       popupAjaxError(e);

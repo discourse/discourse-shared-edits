@@ -44,10 +44,15 @@ module ::DiscourseSharedEdits
         revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
       end
 
+      # Include message_bus_last_id so clients can subscribe from the correct position
+      # to avoid missing any messages between fetching state and subscribing
+      message_bus_last_id = MessageBus.last_id("/shared_edits/#{post.id}")
+
       render json: {
                raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
                version: revision.version,
                state: revision.raw,
+               message_bus_last_id: message_bus_last_id,
              }
     end
 
@@ -122,6 +127,8 @@ module ::DiscourseSharedEdits
         post.publish_message!(
           "/shared_edits/#{post.id}",
           { action: "resync", version: result[:new_version] },
+          max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
+          max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
         )
         render json: result
       else
@@ -136,7 +143,12 @@ module ::DiscourseSharedEdits
       new_version = SharedEditRevision.reset_history!(post.id)
 
       # Notify connected clients to resync
-      post.publish_message!("/shared_edits/#{post.id}", { action: "resync", version: new_version })
+      post.publish_message!(
+        "/shared_edits/#{post.id}",
+        { action: "resync", version: new_version },
+        max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
+        max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
+      )
 
       render json: { success: true, version: new_version }
     end

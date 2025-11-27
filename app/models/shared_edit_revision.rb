@@ -4,6 +4,11 @@ class SharedEditRevision < ActiveRecord::Base
   belongs_to :post
   belongs_to :post_revision
 
+  MAX_HISTORY_AGE = 1.minute
+  MAX_HISTORY_COUNT = 200
+  MESSAGE_BUS_MAX_BACKLOG_AGE = 600
+  MESSAGE_BUS_MAX_BACKLOG_SIZE = 100
+
   def self.will_commit_key(post_id)
     "shared_revision_will_commit_#{post_id}"
   end
@@ -54,21 +59,45 @@ class SharedEditRevision < ActiveRecord::Base
     latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
 
     return if latest.nil? || latest.raw.nil?
-    return if latest.post_revision_id.present? && !apply_to_post
 
-    raw = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
+    # Validate state before attempting to extract text
+    validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
+    unless validation[:valid]
+      Rails.logger.warn(
+        "[SharedEdits] Cannot commit post #{post_id}: state is corrupted - #{validation[:error]}",
+      )
+      return
+    end
 
-    return raw if latest.post_revision_id.present? || !apply_to_post
+    raw = validation[:text]
+
+    return raw unless apply_to_post
+
+    if latest.post_revision_id.present?
+      compact_history!(post_id)
+      return raw
+    end
 
     post = Post.find(post_id)
     revisor = PostRevisor.new(post)
-    opts = { bypass_rate_limiter: true, bypass_bump: true, skip_staff_log: true }
+    opts = {
+      bypass_rate_limiter: true,
+      bypass_bump: true,
+      skip_staff_log: true,
+      skip_validations: true,
+    }
     revised = revisor.revise!(Discourse.system_user, { raw: raw }, opts)
 
-    return raw unless revised
+    unless revised
+      compact_history!(post_id)
+      return raw
+    end
 
     post_revision = PostRevision.where(post: post).order("number desc").first
-    return raw if post_revision.nil?
+    if post_revision.nil?
+      compact_history!(post_id)
+      return raw
+    end
 
     SharedEditRevision.transaction do
       editor_usernames = collect_editor_usernames(post_id)
@@ -76,6 +105,7 @@ class SharedEditRevision < ActiveRecord::Base
       latest.update!(post_revision_id: post_revision.id)
     end
 
+    compact_history!(post_id)
     raw
   end
 
@@ -113,7 +143,7 @@ class SharedEditRevision < ActiveRecord::Base
 
     post_revision.modifications["edit_reason"] = [nil, new_reason]
     post_revision.save!
-    post.update!(edit_reason: new_reason)
+    post.update_column(:edit_reason, new_reason)
   end
   private_class_method :update_edit_reason
 
@@ -157,6 +187,73 @@ class SharedEditRevision < ActiveRecord::Base
 
   MAX_REVISION_RETRIES = 3
 
+  def self.compact_history!(post_id)
+    latest = SharedEditRevision.where(post_id: post_id).order("version desc").limit(1).first
+
+    return if latest.nil?
+
+    # Validate the latest state before compaction - if it's invalid, don't compact
+    # as we may need older revisions for recovery
+    validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
+    unless validation[:valid]
+      Rails.logger.warn(
+        "[SharedEdits] Skipping compaction for post #{post_id}: latest state is invalid - #{validation[:error]}",
+      )
+      return
+    end
+
+    keep_ids = [latest.id]
+
+    last_committed_id =
+      SharedEditRevision
+        .where(post_id: post_id)
+        .where.not(post_revision_id: nil)
+        .order("version desc")
+        .limit(1)
+        .pluck(:id)
+        .first
+    keep_ids << last_committed_id if last_committed_id
+    keep_ids.compact!
+    keep_ids.uniq!
+
+    SharedEditRevision
+      .where(post_id: post_id)
+      .where("updated_at < ?", MAX_HISTORY_AGE.ago)
+      .where.not(id: keep_ids)
+      .delete_all
+
+    remaining_scope =
+      SharedEditRevision.where(post_id: post_id).where.not(id: keep_ids).order("version desc")
+
+    additional_limit = MAX_HISTORY_COUNT - keep_ids.length
+    if additional_limit.positive?
+      keep_ids.concat(remaining_scope.limit(additional_limit).pluck(:id))
+      keep_ids.uniq!
+    end
+
+    SharedEditRevision.where(post_id: post_id).where.not(id: keep_ids).delete_all
+
+    # Verify post-compaction state integrity
+    post_compaction_latest =
+      SharedEditRevision.where(post_id: post_id).order("version desc").limit(1).first
+
+    if post_compaction_latest.nil?
+      Rails.logger.error(
+        "[SharedEdits] Compaction error for post #{post_id}: no revisions remain after compaction",
+      )
+      return
+    end
+
+    post_validation =
+      DiscourseSharedEdits::StateValidator.validate_state(post_compaction_latest.raw)
+    unless post_validation[:valid]
+      Rails.logger.error(
+        "[SharedEdits] Compaction error for post #{post_id}: post-compaction state is invalid - #{post_validation[:error]}",
+      )
+    end
+  end
+  private_class_method :compact_history!
+
   def self.revise!(post_id:, user_id:, client_id:, update:)
     retries = 0
 
@@ -185,7 +282,13 @@ class SharedEditRevision < ActiveRecord::Base
           client_id: client_id,
           user_id: user_id,
         }
-        post.publish_message!("/shared_edits/#{post.id}", message)
+        # Limit backlog to prevent unbounded Redis growth
+        post.publish_message!(
+          "/shared_edits/#{post.id}",
+          message,
+          max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
+          max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
+        )
 
         [revision.version, update]
       end

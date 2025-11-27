@@ -109,6 +109,57 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       get "/shared_edits/p/999999"
       expect(response.status).to eq(404)
     end
+
+    it "includes message_bus_last_id in response" do
+      get "/shared_edits/p/#{post1.id}"
+
+      expect(response.status).to eq(200)
+      expect(response.parsed_body).to have_key("message_bus_last_id")
+      expect(response.parsed_body["message_bus_last_id"]).to be_a(Integer)
+    end
+
+    it "returns correct message_bus_last_id after revisions" do
+      get "/shared_edits/p/#{post1.id}"
+      initial_last_id = response.parsed_body["message_bus_last_id"]
+
+      new_text = "Updated content here"
+      latest_state = latest_state_for(post1)
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+          }
+
+      get "/shared_edits/p/#{post1.id}"
+      new_last_id = response.parsed_body["message_bus_last_id"]
+
+      expect(new_last_id).to be > initial_last_id
+    end
+
+    it "allows client to subscribe without missing messages using message_bus_last_id" do
+      get "/shared_edits/p/#{post1.id}"
+      last_id_at_fetch = response.parsed_body["message_bus_last_id"]
+
+      new_text = "Edit made after fetch but before subscribe"
+      latest_state = latest_state_for(post1)
+
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post1.id}") do
+          put "/shared_edits/p/#{post1.id}",
+              params: {
+                client_id: "other_client",
+                update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+              }
+        end
+
+      expect(messages.length).to eq(1)
+
+      backlog = MessageBus.backlog("/shared_edits/#{post1.id}", last_id_at_fetch)
+
+      expect(backlog.length).to eq(1)
+      expect(backlog.first.data["version"]).to eq(2)
+    end
   end
 
   describe "#commit" do

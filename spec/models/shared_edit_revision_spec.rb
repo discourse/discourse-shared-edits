@@ -166,6 +166,95 @@ RSpec.describe SharedEditRevision do
 
       expect(post.reload.raw).to eq("Original content that is long enough")
     end
+
+    it "removes revisions older than the compaction window" do
+      SharedEditRevision.init!(post)
+      user = Fabricate(:user)
+      fake_edit(post, user.id, "recent change")
+      fake_edit(post, user.id, "another change")
+
+      stale_revision = SharedEditRevision.find_by(post_id: post.id, version: 2)
+      stale_revision.update_column(:updated_at, 2.minutes.ago)
+
+      SharedEditRevision.commit!(post.id)
+
+      expect(SharedEditRevision.exists?(stale_revision.id)).to eq(false)
+      expect(SharedEditRevision.where(post_id: post.id).order("version desc").first.version).to eq(
+        3,
+      )
+    end
+
+    it "caps stored revisions to the configured history limit" do
+      SharedEditRevision.init!(post)
+      user = Fabricate(:user)
+
+      (SharedEditRevision::MAX_HISTORY_COUNT + 10).times do |i|
+        fake_edit(post, user.id, "change #{i}")
+      end
+
+      SharedEditRevision.commit!(post.id)
+
+      expect(SharedEditRevision.where(post_id: post.id).count).to be <=
+        SharedEditRevision::MAX_HISTORY_COUNT
+    end
+
+    it "maintains valid ydoc state after compaction" do
+      SharedEditRevision.init!(post)
+      user = Fabricate(:user)
+
+      5.times { |i| fake_edit(post, user.id, "Content version #{i + 1}") }
+
+      SharedEditRevision
+        .where(post_id: post.id)
+        .where("version < ?", 5)
+        .update_all(updated_at: 2.minutes.ago)
+
+      SharedEditRevision.commit!(post.id)
+
+      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
+
+      expect(validation[:valid]).to eq(true)
+      expect(validation[:text]).to be_present
+    end
+
+    it "skips compaction when latest state is corrupted" do
+      SharedEditRevision.init!(post)
+      user = Fabricate(:user)
+      fake_edit(post, user.id, "Valid content here")
+
+      old_revision = SharedEditRevision.find_by(post_id: post.id, version: 1)
+      old_revision.update_column(:updated_at, 2.minutes.ago)
+
+      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      latest.update_column(:raw, Base64.strict_encode64("corrupted data"))
+
+      initial_count = SharedEditRevision.where(post_id: post.id).count
+
+      SharedEditRevision.commit!(post.id, apply_to_post: false)
+
+      expect(SharedEditRevision.where(post_id: post.id).count).to eq(initial_count)
+    end
+
+    it "preserves ability to continue editing after compaction" do
+      SharedEditRevision.init!(post)
+      user = Fabricate(:user)
+
+      5.times { |i| fake_edit(post, user.id, "Edit #{i + 1}") }
+
+      SharedEditRevision
+        .where(post_id: post.id)
+        .where("version < ?", 5)
+        .update_all(updated_at: 2.minutes.ago)
+
+      SharedEditRevision.commit!(post.id)
+
+      fake_edit(post, user.id, "Post-compaction edit works")
+
+      version, text = SharedEditRevision.latest_raw(post.id)
+      expect(text).to eq("Post-compaction edit works")
+      expect(version).to be > 5
+    end
   end
 
   it "can resolve complex edits and notify" do
