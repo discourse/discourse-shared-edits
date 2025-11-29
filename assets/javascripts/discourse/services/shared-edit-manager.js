@@ -148,7 +148,7 @@ export default class SharedEditManager extends Service {
   };
 
   #handleDocUpdate = (update, origin) => {
-    if (origin !== this) {
+    if (origin !== this && origin !== this.undoManager) {
       return;
     }
 
@@ -159,6 +159,28 @@ export default class SharedEditManager extends Service {
   #onTextareaMouseDown = () => {
     this.#isSelecting = true;
     this.#skippedUpdatesDuringSelection = false;
+  };
+
+  #onTextareaKeydown = (event) => {
+    if (!this.undoManager) {
+      return;
+    }
+
+    const isCtrl = event.ctrlKey || event.metaKey;
+    const isShift = event.shiftKey;
+
+    if (isCtrl && !isShift && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      this.undoManager.undo();
+    }
+
+    if (
+      (isCtrl && isShift && event.key.toLowerCase() === "z") ||
+      (isCtrl && !isShift && event.key.toLowerCase() === "y")
+    ) {
+      event.preventDefault();
+      this.undoManager.redo();
+    }
   };
 
   #onTextareaMouseUp = () => {
@@ -216,7 +238,9 @@ export default class SharedEditManager extends Service {
     this.composer.model?.set("reply", newText);
     this.suppressComposerChange = false;
 
-    textarea.value = newText;
+    if (oldText !== newText) {
+      this.#applyDiffToTextarea(textarea, oldText, newText);
+    }
 
     if (adjustedSelection) {
       // Clamp selection to valid range
@@ -236,6 +260,34 @@ export default class SharedEditManager extends Service {
         textarea.scrollTop = scrollTop;
       });
     }
+  }
+
+  #applyDiffToTextarea(textarea, oldText, newText) {
+    // Find common prefix length
+    let prefixLen = 0;
+    const minLen = Math.min(oldText.length, newText.length);
+    while (prefixLen < minLen && oldText[prefixLen] === newText[prefixLen]) {
+      prefixLen++;
+    }
+
+    // Find common suffix length (but don't overlap with prefix)
+    let suffixLen = 0;
+    while (
+      suffixLen < oldText.length - prefixLen &&
+      suffixLen < newText.length - prefixLen &&
+      oldText[oldText.length - 1 - suffixLen] ===
+        newText[newText.length - 1 - suffixLen]
+    ) {
+      suffixLen++;
+    }
+
+    const replacement = newText.slice(prefixLen, newText.length - suffixLen);
+    textarea.setRangeText(
+      replacement,
+      prefixLen,
+      oldText.length - suffixLen,
+      "preserve"
+    );
   }
 
   #transformSelectionThroughDiff(oldText, newText, selection) {
@@ -376,6 +428,11 @@ export default class SharedEditManager extends Service {
     this.text.observe(this.textObserver);
     this.doc.on("update", this.#handleDocUpdate);
 
+    this.undoManager = new Y.UndoManager(this.text, {
+      trackedOrigins: new Set([this]),
+      captureTimeout: 500,
+    });
+
     this.#attachSelectionListeners();
 
     this.suppressComposerChange = true;
@@ -390,6 +447,11 @@ export default class SharedEditManager extends Service {
 
     if (this.doc) {
       this.doc.off("update", this.#handleDocUpdate);
+    }
+
+    if (this.undoManager) {
+      this.undoManager.destroy();
+      this.undoManager = null;
     }
 
     this.#detachSelectionListeners();
@@ -410,6 +472,7 @@ export default class SharedEditManager extends Service {
     }
 
     textarea.addEventListener("mousedown", this.#onTextareaMouseDown);
+    textarea.addEventListener("keydown", this.#onTextareaKeydown);
     // Use document for mouseup to catch releases outside the textarea
     document.addEventListener("mouseup", this.#onTextareaMouseUp);
     this.#selectionListenersAttached = true;
@@ -423,6 +486,7 @@ export default class SharedEditManager extends Service {
     const textarea = document.querySelector(TEXTAREA_SELECTOR);
     if (textarea) {
       textarea.removeEventListener("mousedown", this.#onTextareaMouseDown);
+      textarea.removeEventListener("keydown", this.#onTextareaKeydown);
     }
     document.removeEventListener("mouseup", this.#onTextareaMouseUp);
     this.#selectionListenersAttached = false;
@@ -493,7 +557,50 @@ export default class SharedEditManager extends Service {
     this.suppressComposerChange = false;
 
     if (textarea) {
-      textarea.value = text;
+      const currentValue = textarea.value;
+      if (currentValue === text) {
+        // Already in sync (e.g. local edit echoed back or no change)
+        return;
+      }
+
+      let appliedSurgically = false;
+
+      if (event.delta) {
+        // Calculate expected length of "old" text (State A) from current length (State B) and delta
+        let expectedOldLength = text.length;
+        let insertLen = 0;
+        let deleteLen = 0;
+
+        for (const op of event.delta) {
+          if (op.insert) {
+            insertLen += typeof op.insert === "string" ? op.insert.length : 0;
+          } else if (op.delete) {
+            deleteLen += op.delete;
+          }
+        }
+        // Length B = Length A + Inserts - Deletes
+        // Length A = Length B - Inserts + Deletes
+        expectedOldLength = expectedOldLength - insertLen + deleteLen;
+
+        if (currentValue.length === expectedOldLength) {
+          let index = 0;
+          event.delta.forEach((op) => {
+            if (op.retain) {
+              index += op.retain;
+            } else if (op.insert) {
+              textarea.setRangeText(op.insert, index, index);
+              index += op.insert.length;
+            } else if (op.delete) {
+              textarea.setRangeText("", index, index + op.delete);
+            }
+          });
+          appliedSurgically = true;
+        }
+      }
+
+      if (!appliedSurgically) {
+        this.#applyDiffToTextarea(textarea, currentValue, text);
+      }
 
       if (adjustedSelection) {
         textarea.selectionStart = adjustedSelection.start;
@@ -571,7 +678,7 @@ export default class SharedEditManager extends Service {
     // Use throttle instead of debounce so updates sync periodically during
     // continuous typing, not just when typing stops. With immediate=true,
     // the first call executes immediately, then at most once per THROTTLE_SAVE ms.
-    throttle(this, this.#sendUpdates, THROTTLE_SAVE, true);
+    throttle(this, this.#sendUpdates, THROTTLE_SAVE, false);
   }
 
   async #flushPendingUpdates() {
