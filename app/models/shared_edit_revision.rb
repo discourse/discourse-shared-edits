@@ -282,6 +282,7 @@ class SharedEditRevision < ActiveRecord::Base
           update: update,
           client_id: client_id,
           user_id: user_id,
+          user_name: User.find(user_id).username,
         }
         # Limit backlog to prevent unbounded Redis growth
         post.publish_message!(

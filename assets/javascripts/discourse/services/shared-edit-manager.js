@@ -3,6 +3,7 @@ import Service, { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import loadScript from "discourse/lib/load-script";
+import CursorOverlay from "../lib/cursor-overlay";
 
 const THROTTLE_SAVE = 350;
 const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
@@ -144,7 +145,12 @@ export default class SharedEditManager extends Service {
     }
 
     const update = base64ToUint8Array(message.update);
-    window.Y.applyUpdate(this.doc, update, "remote");
+    window.Y.applyUpdate(this.doc, update, {
+      type: "remote",
+      client_id: message.client_id,
+      user_id: message.user_id,
+      user_name: message.user_name,
+    });
   };
 
   #handleDocUpdate = (update, origin) => {
@@ -435,6 +441,11 @@ export default class SharedEditManager extends Service {
 
     this.#attachSelectionListeners();
 
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+    if (textarea) {
+      this.cursorOverlay = new CursorOverlay(textarea);
+    }
+
     this.suppressComposerChange = true;
     this.composer.model.set("reply", this.text.toString());
     this.suppressComposerChange = false;
@@ -455,6 +466,11 @@ export default class SharedEditManager extends Service {
     }
 
     this.#detachSelectionListeners();
+
+    if (this.cursorOverlay) {
+      this.cursorOverlay.destroy();
+      this.cursorOverlay = null;
+    }
 
     this.doc = null;
     this.text = null;
@@ -513,6 +529,41 @@ export default class SharedEditManager extends Service {
   }
 
   #handleTextChange(event, transaction) {
+    // Update remote cursors based on text changes
+    if (
+      transaction.origin &&
+      transaction.origin.type === "remote" &&
+      this.cursorOverlay
+    ) {
+      const origin = transaction.origin;
+      let index = 0;
+      event.delta.forEach((op) => {
+        if (op.retain) {
+          index += op.retain;
+        }
+        if (op.insert) {
+          const length = typeof op.insert === "string" ? op.insert.length : 1;
+          index += length;
+        }
+      });
+
+      // Create a relative position for the remote cursor so it sticks to this text
+      const relativePosition = window.Y.createRelativePositionFromTypeIndex(
+        this.text,
+        index,
+        -1
+      );
+
+      this.cursorOverlay.updateCursor(
+        origin.client_id,
+        origin,
+        relativePosition,
+        this.doc
+      );
+    }
+
+    this.cursorOverlay?.refresh();
+
     if (transaction?.origin === this) {
       return;
     }
@@ -601,6 +652,9 @@ export default class SharedEditManager extends Service {
       if (!appliedSurgically) {
         this.#applyDiffToTextarea(textarea, currentValue, text);
       }
+
+      // Refresh cursor overlay positions as text layout may have changed
+      this.cursorOverlay?.refresh();
 
       if (adjustedSelection) {
         textarea.selectionStart = adjustedSelection.start;
