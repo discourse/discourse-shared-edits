@@ -421,4 +421,34 @@ RSpec.describe SharedEditRevision do
       expect(final_text).to be_present
     end
   end
+
+  describe ".ensure_will_commit" do
+    fab!(:post)
+
+    let(:redis) { Discourse.redis }
+    let(:key) { SharedEditRevision.will_commit_key(post.id) }
+
+    before { redis.del(key) }
+
+    it "schedules a job and sets a key if not already scheduled" do
+      expect(redis.get(key)).to be_nil
+
+      expect { SharedEditRevision.ensure_will_commit(post.id) }.to change(
+        Jobs::CommitSharedRevision.jobs,
+        :size,
+      ).by(1)
+
+      expect(redis.get(key)).to eq("1")
+      expect(redis.ttl(key)).to be_within(5).of(60)
+    end
+
+    it "does not schedule a job if already scheduled" do
+      redis.setex(key, 60, "1")
+
+      expect { SharedEditRevision.ensure_will_commit(post.id) }.not_to change(
+        Jobs::CommitSharedRevision.jobs,
+        :size,
+      )
+    end
+  end
 end

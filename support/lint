@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+usage() {
+  cat <<'HELP'
+Usage: support/lint [--fix]
+
+Runs the same lint steps as the GitHub CI workflow from the repo root.
+Passing --fix (or -f) swaps in the autofix-friendly variants where available.
+HELP
+}
+
+fix=false
+while (( $# )); do
+  case "$1" in
+    -f|--fix)
+      fix=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+run_cmd() {
+  printf '\n>>> %s\n' "$*"
+  "$@"
+}
+
+readarray -t ruby_files < <(git ls-files '*.rb' '*.rake' '*.thor')
+
+do_stree() {
+  local subcommand=$1
+  if (( ${#ruby_files[@]} > 0 )); then
+    run_cmd bundle exec stree "$subcommand" Gemfile "${ruby_files[@]}"
+  else
+    run_cmd bundle exec stree "$subcommand" Gemfile
+  fi
+}
+
+if $fix; then
+  run_cmd bundle exec rubocop --force-exclusion -A
+  do_stree write
+  run_cmd pnpm prettier -w "assets/**/*.{scss,js,gjs,hbs}"
+  run_cmd pnpm eslint --fix --no-error-on-unmatched-pattern {test,assets,admin/assets}/javascripts
+  run_cmd pnpm stylelint --fix --allow-empty-input "assets/**/*.scss"
+else
+  run_cmd bundle exec rubocop --force-exclusion
+  do_stree check
+  run_cmd pnpm prettier --check "assets/**/*.{scss,js,gjs,hbs}"
+  run_cmd pnpm eslint --no-error-on-unmatched-pattern {test,assets,admin/assets}/javascripts
+  run_cmd pnpm stylelint --allow-empty-input "assets/**/*.scss"
+fi

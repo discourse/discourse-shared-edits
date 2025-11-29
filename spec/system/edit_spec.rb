@@ -17,9 +17,7 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
     try_until_success do
       revision = SharedEditRevision.find_by(post_id: post.id, version: 1)
       expect(revision).to be_present
-      expect(DiscourseSharedEdits::Yjs.text_from_state(revision.raw)).to eq(
-        "lorem ipsum\n",
-      )
+      expect(DiscourseSharedEdits::Yjs.text_from_state(revision.raw)).to eq("lorem ipsum\n")
       expect(revision.revision).to eq("")
       expect(SharedEditRevision.count).to eq(1)
     end
@@ -31,9 +29,7 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
     try_until_success do
       revision = SharedEditRevision.find_by(post_id: post.id, version: 2)
       expect(revision).to be_present
-      expect(
-        DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
-      ).to eq("lorem ipsum\nfoo")
+      expect(DiscourseSharedEdits::Yjs.text_from_state(revision.raw)).to eq("lorem ipsum\nfoo")
       expect(SharedEditRevision.count).to eq(2)
     end
 
@@ -41,9 +37,7 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
     try_until_success do
       revision = SharedEditRevision.find_by(post_id: post.id, version: 3)
       expect(revision).to be_present
-      expect(
-        DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
-      ).to eq("lorem ipsum\nfoo bar")
+      expect(DiscourseSharedEdits::Yjs.text_from_state(revision.raw)).to eq("lorem ipsum\nfoo bar")
       expect(SharedEditRevision.count).to eq(3)
     end
 

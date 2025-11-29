@@ -1,14 +1,13 @@
-import { click, visit, triggerEvent, waitUntil, getContext } from "@ember/test-helpers";
+import { click, visit, waitUntil } from "@ember/test-helpers";
 import { test } from "qunit";
-import { acceptance, publishToMessageBus } from "discourse/tests/helpers/qunit-helpers";
+import {
+  acceptance,
+  publishToMessageBus,
+} from "discourse/tests/helpers/qunit-helpers";
 
 acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
   needs.user();
-  let pretenderServer;
-
   needs.pretender((server, helper) => {
-    pretenderServer = server;
-
     server.put("/shared_edits/p/:id/enable.json", () =>
       helper.response({ success: "OK" })
     );
@@ -30,10 +29,13 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     );
 
     server.put("/shared_edits/p/:id", () => helper.response({ success: "OK" }));
-    server.put("/shared_edits/p/:id/selection", () => helper.response({ success: "OK" }));
-    server.put("/shared_edits/p/:id/commit", () => helper.response({ success: "OK" }));
+    server.put("/shared_edits/p/:id/selection", () =>
+      helper.response({ success: "OK" })
+    );
+    server.put("/shared_edits/p/:id/commit", () =>
+      helper.response({ success: "OK" })
+    );
   });
-
 
   test("displays remote cursor when remote update is received", async function (assert) {
     await visit("/t/internationalization-localization/280");
@@ -42,7 +44,9 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     await click(".admin-toggle-shared-edits");
     await click(".shared-edit");
 
-    assert.dom(".shared-edits-cursor-overlay").exists("Cursor overlay container created");
+    assert
+      .dom(".shared-edits-cursor-overlay")
+      .exists("Cursor overlay container created");
 
     // Wait for Yjs to be loaded by the application
     await waitUntil(() => window.Y);
@@ -65,11 +69,13 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     });
 
     // The update should trigger the text observer -> CursorOverlay.updateCursor -> Render
-    
+
     // Wait for UI update
     await waitUntil(() => document.querySelector(".shared-edits-cursor"));
 
     assert.dom(".shared-edits-cursor").exists("Remote cursor element created");
-    assert.dom(".shared-edits-cursor__label").hasText("remoteuser", "Cursor label shows username");
+    assert
+      .dom(".shared-edits-cursor__label")
+      .hasText("remoteuser", "Cursor label shows username");
   });
 });

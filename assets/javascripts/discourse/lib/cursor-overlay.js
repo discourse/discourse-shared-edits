@@ -134,12 +134,12 @@ export default class CursorOverlay {
       cursor.height = viewCoords.height;
 
       // Check if on first line (approximate check using a safe threshold, e.g., < 1.5em)
-            const isFirstLine = viewCoords.top < (viewCoords.height || 20) * 1.2;
-            if (isFirstLine) {
-              cursor.label.classList.add("shared-edits-cursor__label--bottom");
-            } else {
-              cursor.label.classList.remove("shared-edits-cursor__label--bottom");
-            }
+      const isFirstLine = viewCoords.top < (viewCoords.height || 20) * 1.2;
+      if (isFirstLine) {
+        cursor.label.classList.add("shared-edits-cursor__label--bottom");
+      } else {
+        cursor.label.classList.remove("shared-edits-cursor__label--bottom");
+      }
       cursor.element.style.display = "block";
       this.renderCursor(cursor);
     } else {
@@ -168,9 +168,10 @@ export default class CursorOverlay {
     const color = this.getColor(user.user_id);
     el.style.borderColor = color;
 
-        const label = document.createElement("div");
-        label.className = "shared-edits-cursor__label";
-        label.textContent = user.user_name;    label.style.backgroundColor = color;
+    const label = document.createElement("div");
+    label.className = "shared-edits-cursor__label";
+    label.textContent = user.user_name;
+    label.style.backgroundColor = color;
 
     el.appendChild(label);
 
@@ -193,10 +194,11 @@ export default class CursorOverlay {
     }
   }
 
-    getColor(id) {
-      const index = (id || 0) % 7;
-      return `var(--shared-edit-color-${index + 1})`;
-    }
+  getColor(id) {
+    const index = (id || 0) % 7;
+    return `var(--shared-edit-color-${index + 1})`;
+  }
+
   destroy() {
     this.textarea.removeEventListener("scroll", this.boundOnScroll);
     if (this.resizeObserver) {

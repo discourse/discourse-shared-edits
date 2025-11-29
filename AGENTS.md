@@ -4,6 +4,11 @@
 - While working on the plugin always feel free to consult Discourse source for best practices, patterns, and utilities.
 - NEVER make commits to the repo, always leave it to humans to commit the code.
 
+## Linting 
+
+- run support/lint to lint files
+- run support/lint --fix to attempt fixes
+
 ## Scope & Feature Flags
 - Lives at `plugins/discourse-shared-edits`; everything here only runs when `SiteSetting.shared_edits_enabled` (defined in `config/settings.yml`) is true and the per-post custom field `shared_edits_enabled` has been toggled via `SharedEditRevision.toggle_shared_edits!`.
 - Guardian hook (`lib/discourse_shared_edits/guardian_extension.rb`) restricts enable/disable/reset/recover endpoints to staff or trust level 4+. Reuse `guardian.ensure_can_toggle_shared_edits!` for any new privileged action.
@@ -37,3 +42,4 @@
 - Recovery workflow: corruption is surfaced in logs and bubbled to the client via `state_recovered` / `state_corrupted` error codes. When adding new error states, expose translated messaging in `config/locales/client.*` and wire them into the composer UI.
 - Selection sharing: the Ember service currently attempts to PUT `/shared_edits/p/:post_id/selection`. The endpoint is not implemented yet, so requests are best-effort and errors are ignored; reuse that route if you decide to ship cursor/selection sync so the client code does not need changing.
 - Knowledge sharing: keep this file current whenever you add new entry points, commands, or conventions. After completing any task that touches this plugin, spawn a review agent to compare your diff against `plugins/discourse-shared-edits/AGENTS.md` and confirm the instructions remain accurate.
+- Tip: Run `plugins/discourse-shared-edits/support/lint` from the repo root (add `--fix`/`-f` to trigger auto-fix variants) to execute the full GitHub lint suite without guessing binaries.
