@@ -7,6 +7,7 @@ import CursorOverlay from "../lib/cursor-overlay";
 
 const THROTTLE_SAVE = 350;
 const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
+const SPELLCHECK_SUSPEND_DURATION_MS = 1000;
 
 let yjsPromise;
 
@@ -129,6 +130,9 @@ export default class SharedEditManager extends Service {
   #isSelecting = false;
   #selectionListenersAttached = false;
   #skippedUpdatesDuringSelection = false;
+  #spellcheckTimeoutId = null;
+  #spellcheckRestoreValue = null;
+  #spellcheckTextarea = null;
 
   #onRemoteMessage = (message) => {
     if (message.action === "resync") {
@@ -138,6 +142,10 @@ export default class SharedEditManager extends Service {
 
     if (!this.doc || message.client_id === this.messageBus.clientId) {
       return;
+    }
+
+    if (message.update) {
+      this.#temporarilyDisableSpellcheck();
     }
 
     if (!this.#isSelecting) {
@@ -208,6 +216,11 @@ export default class SharedEditManager extends Service {
       this.#skippedUpdatesDuringSelection = false;
     }
   };
+
+  willDestroy() {
+    this.#resetSpellcheckSuppression();
+    super.willDestroy(...arguments);
+  }
 
   #getTextareaSelection() {
     const textarea = document.querySelector(TEXTAREA_SELECTOR);
@@ -452,6 +465,8 @@ export default class SharedEditManager extends Service {
   }
 
   #teardownDoc() {
+    this.#resetSpellcheckSuppression();
+
     if (this.text && this.textObserver) {
       this.text.unobserve(this.textObserver);
     }
@@ -726,6 +741,51 @@ export default class SharedEditManager extends Service {
       end: endAbs.index,
       scrollTop: rel.scrollTop,
     };
+  }
+
+  #temporarilyDisableSpellcheck() {
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+
+    if (!textarea) {
+      return;
+    }
+
+    if (this.#spellcheckRestoreValue === null) {
+      this.#spellcheckRestoreValue = textarea.spellcheck;
+    }
+
+    this.#spellcheckTextarea = textarea;
+    textarea.spellcheck = false;
+
+    if (this.#spellcheckTimeoutId) {
+      clearTimeout(this.#spellcheckTimeoutId);
+    }
+
+    this.#spellcheckTimeoutId = setTimeout(() => {
+      this.#spellcheckTimeoutId = null;
+      this.#applySpellcheckRestore();
+    }, SPELLCHECK_SUSPEND_DURATION_MS);
+  }
+
+  #applySpellcheckRestore() {
+    if (
+      this.#spellcheckTextarea?.isConnected &&
+      this.#spellcheckRestoreValue !== null
+    ) {
+      this.#spellcheckTextarea.spellcheck = this.#spellcheckRestoreValue;
+    }
+
+    this.#spellcheckTextarea = null;
+    this.#spellcheckRestoreValue = null;
+  }
+
+  #resetSpellcheckSuppression() {
+    if (this.#spellcheckTimeoutId) {
+      clearTimeout(this.#spellcheckTimeoutId);
+      this.#spellcheckTimeoutId = null;
+    }
+
+    this.#applySpellcheckRestore();
   }
 
   #sendUpdatesThrottled() {
