@@ -35,6 +35,28 @@ function uint8ArrayToBase64(uint8) {
   return btoa(binary);
 }
 
+function encodeRelativePositionToBase64(relativePosition) {
+  if (!relativePosition || !window.Y || !window.Y.encodeRelativePosition) {
+    return null;
+  }
+
+  const encoded = window.Y.encodeRelativePosition(relativePosition);
+  return uint8ArrayToBase64(encoded);
+}
+
+function decodeRelativePositionFromBase64(base64) {
+  if (!base64 || !window.Y || !window.Y.decodeRelativePosition) {
+    return null;
+  }
+
+  try {
+    const uint8 = base64ToUint8Array(base64);
+    return window.Y.decodeRelativePosition(uint8);
+  } catch {
+    return null;
+  }
+}
+
 function applyDiff(yText, before, after) {
   if (before === after) {
     return;
@@ -153,11 +175,14 @@ export default class SharedEditManager extends Service {
     }
 
     const update = base64ToUint8Array(message.update);
+    const cursor = this.#deserializeCursorPayload(message.cursor);
+
     window.Y.applyUpdate(this.doc, update, {
       type: "remote",
       client_id: message.client_id,
       user_id: message.user_id,
       user_name: message.user_name,
+      cursor,
     });
   };
 
@@ -551,30 +576,35 @@ export default class SharedEditManager extends Service {
       this.cursorOverlay
     ) {
       const origin = transaction.origin;
-      let index = 0;
-      event.delta.forEach((op) => {
-        if (op.retain) {
-          index += op.retain;
-        }
-        if (op.insert) {
-          const length = typeof op.insert === "string" ? op.insert.length : 1;
-          index += length;
-        }
-      });
+      let relativePosition = origin.cursor?.end || origin.cursor?.start;
 
-      // Create a relative position for the remote cursor so it sticks to this text
-      const relativePosition = window.Y.createRelativePositionFromTypeIndex(
-        this.text,
-        index,
-        -1
-      );
+      if (!relativePosition) {
+        let index = 0;
+        (event.delta || []).forEach((op) => {
+          if (op.retain) {
+            index += op.retain;
+          }
+          if (op.insert) {
+            const length = typeof op.insert === "string" ? op.insert.length : 1;
+            index += length;
+          }
+        });
 
-      this.cursorOverlay.updateCursor(
-        origin.client_id,
-        origin,
-        relativePosition,
-        this.doc
-      );
+        relativePosition = window.Y.createRelativePositionFromTypeIndex(
+          this.text,
+          index,
+          -1
+        );
+      }
+
+      if (relativePosition) {
+        this.cursorOverlay.updateCursor(
+          origin.client_id,
+          origin,
+          relativePosition,
+          this.doc
+        );
+      }
     }
 
     this.cursorOverlay?.refresh();
@@ -743,6 +773,54 @@ export default class SharedEditManager extends Service {
     };
   }
 
+  #buildCursorPayload() {
+    if (!this.text) {
+      return null;
+    }
+
+    const selection = this.#captureRelativeSelection();
+    if (!selection) {
+      return null;
+    }
+
+    const cursor = {};
+    const start = encodeRelativePositionToBase64(selection.start);
+    if (start) {
+      cursor.start = start;
+    }
+
+    const end = encodeRelativePositionToBase64(selection.end);
+    if (end) {
+      cursor.end = end;
+    }
+
+    return Object.keys(cursor).length ? cursor : null;
+  }
+
+  #deserializeCursorPayload(cursorPayload) {
+    if (!cursorPayload) {
+      return null;
+    }
+
+    const cursor = {};
+
+    if (cursorPayload.start) {
+      const start = decodeRelativePositionFromBase64(cursorPayload.start);
+      if (start) {
+        cursor.start = start;
+      }
+    }
+
+    if (cursorPayload.end) {
+      const end = decodeRelativePositionFromBase64(cursorPayload.end);
+      if (end) {
+        cursor.end = end;
+      }
+    }
+
+    return Object.keys(cursor).length ? cursor : null;
+  }
+
   #temporarilyDisableSpellcheck() {
     const textarea = document.querySelector(TEXTAREA_SELECTOR);
 
@@ -832,16 +910,24 @@ export default class SharedEditManager extends Service {
         ? this.pendingUpdates[0]
         : window.Y.mergeUpdates(this.pendingUpdates);
 
+    const cursorPayload = this.#buildCursorPayload();
+
     this.pendingUpdates = [];
     this.ajaxInProgress = true;
 
     try {
+      const data = {
+        update: uint8ArrayToBase64(payload),
+        client_id: this.messageBus.clientId,
+      };
+
+      if (cursorPayload) {
+        data.cursor = cursorPayload;
+      }
+
       this.inFlightRequest = ajax(`/shared_edits/p/${postId}`, {
         method: "PUT",
-        data: {
-          update: uint8ArrayToBase64(payload),
-          client_id: this.messageBus.clientId,
-        },
+        data,
       });
 
       await this.inFlightRequest;

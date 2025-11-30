@@ -73,12 +73,23 @@ module ::DiscourseSharedEdits
       post = Post.find(params[:post_id].to_i)
       guardian.ensure_can_see!(post)
 
+      cursor_params = params[:cursor]
+      cursor_hash =
+        case cursor_params
+        when ActionController::Parameters
+          cursor_params.permit(:start, :end).to_h
+        when Hash
+          cursor_params.slice(:start, :end, "start", "end")
+        end
+      cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
+
       version, update =
         SharedEditRevision.revise!(
           post_id: post.id,
           user_id: current_user.id,
           client_id: params[:client_id],
           update: params[:update],
+          cursor: cursor_hash,
         )
 
       SharedEditRevision.ensure_will_commit(post.id)

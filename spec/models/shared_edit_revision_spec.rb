@@ -131,6 +131,26 @@ RSpec.describe SharedEditRevision do
       expect(messages.first.data[:version]).to eq(2)
       expect(messages.first.data[:user_id]).to eq(user.id)
     end
+
+    it "includes cursor metadata when supplied" do
+      cursor_payload = { "start" => "encoded-start", "end" => "encoded-end" }
+      state = latest_state(post)
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "cursor content")
+
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post.id}") do
+          SharedEditRevision.revise!(
+            post_id: post.id,
+            user_id: user.id,
+            client_id: "cursor-client",
+            update: update,
+            cursor: cursor_payload,
+          )
+        end
+
+      expect(messages.length).to eq(1)
+      expect(messages.first.data[:cursor]).to eq(cursor_payload)
+    end
   end
 
   describe ".commit!" do

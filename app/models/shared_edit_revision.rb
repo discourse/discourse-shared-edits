@@ -255,7 +255,7 @@ class SharedEditRevision < ActiveRecord::Base
   end
   private_class_method :compact_history!
 
-  def self.revise!(post_id:, user_id:, client_id:, update:)
+  def self.revise!(post_id:, user_id:, client_id:, update:, cursor: nil)
     retries = 0
 
     begin
@@ -284,6 +284,7 @@ class SharedEditRevision < ActiveRecord::Base
           user_id: user_id,
           user_name: User.find(user_id).username,
         }
+        message[:cursor] = cursor if cursor.present?
         # Limit backlog to prevent unbounded Redis growth
         post.publish_message!(
           "/shared_edits/#{post.id}",
