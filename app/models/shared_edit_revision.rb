@@ -8,6 +8,15 @@ class SharedEditRevision < ActiveRecord::Base
   MAX_HISTORY_COUNT = 200
   MESSAGE_BUS_MAX_BACKLOG_AGE = 600
   MESSAGE_BUS_MAX_BACKLOG_SIZE = 100
+  MAX_AWARENESS_BYTES = 10.kilobytes
+  # Default commit delay if site setting is not available
+  DEFAULT_COMMIT_DELAY_SECONDS = 30
+
+  def self.commit_delay_seconds
+    SiteSetting.shared_edits_commit_delay_seconds
+  rescue StandardError
+    DEFAULT_COMMIT_DELAY_SECONDS
+  end
 
   def self.will_commit_key(post_id)
     "shared_revision_will_commit_#{post_id}"
@@ -16,8 +25,9 @@ class SharedEditRevision < ActiveRecord::Base
   def self.ensure_will_commit(post_id)
     key = will_commit_key(post_id)
     if !Discourse.redis.get(key)
-      Discourse.redis.setex(key, 60, "1")
-      Jobs.enqueue_in(10.seconds, :commit_shared_revision, post_id: post_id)
+      delay = commit_delay_seconds
+      Discourse.redis.setex(key, delay * 2, "1")
+      Jobs.enqueue_in(delay.seconds, :commit_shared_revision, post_id: post_id)
     end
   end
 
@@ -203,59 +213,48 @@ class SharedEditRevision < ActiveRecord::Base
       return
     end
 
-    keep_ids = [latest.id]
-
-    last_committed_id =
+    # Keep only a few full snapshots, null out others to save space
+    # Use a Set to ensure uniqueness and prevent duplicate IDs
+    keep_raw_ids = Set.new([latest.id])
+    last_committed =
       SharedEditRevision
         .where(post_id: post_id)
         .where.not(post_revision_id: nil)
         .order("version desc")
-        .limit(1)
-        .pluck(:id)
         .first
-    keep_ids << last_committed_id if last_committed_id
-    keep_ids.compact!
-    keep_ids.uniq!
+    keep_raw_ids << last_committed.id if last_committed
 
+    # Null out raw for everything else we are keeping
+    SharedEditRevision
+      .where(post_id: post_id)
+      .where.not(id: keep_raw_ids.to_a)
+      .where.not(raw: nil)
+      .update_all(raw: nil)
+
+    # Delete very old history
     SharedEditRevision
       .where(post_id: post_id)
       .where("updated_at < ?", MAX_HISTORY_AGE.ago)
-      .where.not(id: keep_ids)
+      .where.not(id: keep_raw_ids.to_a)
       .delete_all
 
-    remaining_scope =
-      SharedEditRevision.where(post_id: post_id).where.not(id: keep_ids).order("version desc")
-
-    additional_limit = MAX_HISTORY_COUNT - keep_ids.length
-    if additional_limit.positive?
-      keep_ids.concat(remaining_scope.limit(additional_limit).pluck(:id))
-      keep_ids.uniq!
-    end
-
-    SharedEditRevision.where(post_id: post_id).where.not(id: keep_ids).delete_all
-
-    # Verify post-compaction state integrity
-    post_compaction_latest =
-      SharedEditRevision.where(post_id: post_id).order("version desc").limit(1).first
-
-    if post_compaction_latest.nil?
-      Rails.logger.error(
-        "[SharedEdits] Compaction error for post #{post_id}: no revisions remain after compaction",
+    # Also enforce count limit, preserving the ones we need for recovery
+    keep_ids =
+      Set.new(
+        SharedEditRevision
+          .where(post_id: post_id)
+          .order("version desc")
+          .limit(MAX_HISTORY_COUNT)
+          .pluck(:id),
       )
-      return
-    end
 
-    post_validation =
-      DiscourseSharedEdits::StateValidator.validate_state(post_compaction_latest.raw)
-    unless post_validation[:valid]
-      Rails.logger.error(
-        "[SharedEdits] Compaction error for post #{post_id}: post-compaction state is invalid - #{post_validation[:error]}",
-      )
-    end
+    # Merge the two sets to get all IDs we want to keep
+    all_keep_ids = (keep_ids + keep_raw_ids).to_a
+    SharedEditRevision.where(post_id: post_id).where.not(id: all_keep_ids).delete_all
   end
   private_class_method :compact_history!
 
-  def self.revise!(post_id:, user_id:, client_id:, update:, cursor: nil)
+  def self.revise!(post_id:, user_id:, client_id:, update:, cursor: nil, awareness: nil)
     retries = 0
 
     begin
@@ -285,6 +284,7 @@ class SharedEditRevision < ActiveRecord::Base
           user_name: User.find(user_id).username,
         }
         message[:cursor] = cursor if cursor.present?
+        message[:awareness] = awareness if awareness.present?
         # Limit backlog to prevent unbounded Redis growth
         post.publish_message!(
           "/shared_edits/#{post.id}",

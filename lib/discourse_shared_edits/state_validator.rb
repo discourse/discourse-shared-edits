@@ -48,6 +48,22 @@ module DiscourseSharedEdits
         end
       end
 
+      def validate_awareness(awareness_b64)
+        return { valid: false, error: "Awareness is nil" } if awareness_b64.nil?
+        return { valid: false, error: "Awareness is empty" } if awareness_b64.empty?
+
+        begin
+          decoded = Base64.strict_decode64(awareness_b64)
+          return { valid: false, error: "Decoded awareness is empty" } if decoded.empty?
+          if decoded.bytesize > SharedEditRevision::MAX_AWARENESS_BYTES
+            return { valid: false, error: "Awareness payload too large" }
+          end
+          { valid: true, error: nil }
+        rescue ArgumentError => e
+          { valid: false, error: "Invalid base64: #{e.message}" }
+        end
+      end
+
       def health_check(post_id)
         report = { post_id: post_id, healthy: true, errors: [], warnings: [], state: nil }
 
@@ -152,6 +168,8 @@ module DiscourseSharedEdits
 
         result = DiscourseSharedEdits::Yjs.apply_update(current_state, update)
 
+        # Validate the resulting state to catch any corruption that Yjs might not throw for
+        # This provides an explicit safety check beyond what Yjs.apply_update validates
         state_validation = validate_state(result[:state])
         unless state_validation[:valid]
           Rails.logger.error(

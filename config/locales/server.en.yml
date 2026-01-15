@@ -6,3 +6,5 @@ en:
       state_recovered: "The collaborative editing state was corrupted but has been recovered. Please refresh to continue editing."
   site_settings:
     shared_edits_enabled: Enable shared, collaborative, editing on designated posts.
+    shared_edits_editor_mode: "Editor mode for shared edits: markdown uses plain text, rich uses the ProseMirror rich text editor."
+    shared_edits_commit_delay_seconds: "Seconds to wait before committing collaborative edits to the post. Lower values commit more frequently but may increase server load."

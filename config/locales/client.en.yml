@@ -7,3 +7,5 @@ en:
       button_title: "Edit Post Collaboratively"
       composer_title: "Post is being edited collaboratively"
       done: "Done"
+      errors:
+        rich_mode_failed: "Shared edits couldn't load the rich editor collaboration plugins. The composer has been closed; please try again or switch to markdown mode."

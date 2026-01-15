@@ -1,3 +1,5 @@
+import { action } from "@ember/object";
+import { service } from "@ember/service";
 import { htmlSafe } from "@ember/template";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
@@ -10,8 +12,18 @@ import {
   SAVE_LABELS,
 } from "discourse/models/composer";
 import SharedEditButton from "../components/shared-edit-button";
+import sharedEditsProsemirrorExtension from "../lib/shared-edits-prosemirror-extension";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
+
+// WeakRef to siteSettings service to avoid memory leaks while allowing
+// transformers to access current settings without stale references
+let _siteSettingsRef = null;
+
+function getSiteSettings() {
+  // Return the current siteSettings from the WeakRef, or null if GC'd
+  return _siteSettingsRef?.deref?.() ?? _siteSettingsRef;
+}
 
 function formatSharedEditActionTitle(model) {
   if (model.action !== SHARED_EDIT_ACTION) {
@@ -39,17 +51,27 @@ function initWithApi(api) {
     actionTitle: formatSharedEditActionTitle,
   });
 
-  // Force markdown mode when in shared edit mode
-  // This disables the rich text editor and hides the toggle
+  // Force editor mode based on shared_edits_editor_mode setting
+  // When in shared edit mode, use the configured editor mode (markdown or rich)
   api.registerValueTransformer(
     "composer-force-editor-mode",
     ({ value, context }) => {
       if (context.model?.action === SHARED_EDIT_ACTION) {
+        // Get current siteSettings to avoid stale references
+        const siteSettings = getSiteSettings();
+        // Use rich mode if the setting is "rich", otherwise force markdown
+        if (siteSettings?.shared_edits_editor_mode === "rich") {
+          return USER_OPTION_COMPOSITION_MODES.richEditor;
+        }
         return USER_OPTION_COMPOSITION_MODES.markdown;
       }
       return value;
     }
   );
+
+  // Register ProseMirror extension for rich text collaborative editing
+  // This adds y-prosemirror plugins when Yjs state is available
+  api.registerRichEditorExtension(sharedEditsProsemirrorExtension);
 
   customizePostMenu(api);
 
@@ -149,6 +171,43 @@ function initWithApi(api) {
         }
       }
   );
+
+  api.modifyClass(
+    "component:d-editor",
+    (Superclass) =>
+      class extends Superclass {
+        @service composer;
+        @service sharedEditManager;
+
+        @action
+        onChange(event) {
+          super.onChange(event);
+
+          if (this.composer?.model?.action !== SHARED_EDIT_ACTION) {
+            return;
+          }
+
+          this.sharedEditManager?.syncFromComposerValue?.(
+            event?.target?.value ?? ""
+          );
+        }
+      }
+  );
+
+  api.modifyClass(
+    "component:composer-messages",
+    (Superclass) =>
+      class extends Superclass {
+        async _findMessages() {
+          if (this.composer?.action === SHARED_EDIT_ACTION) {
+            this.set("checkedMessages", true);
+            return;
+          }
+
+          return super._findMessages(...arguments);
+        }
+      }
+  );
 }
 
 function customizePostMenu(api) {
@@ -181,6 +240,15 @@ export default {
     const siteSettings = container.lookup("service:site-settings");
     if (!siteSettings.shared_edits_enabled) {
       return;
+    }
+
+    // Store siteSettings reference for use in transformer
+    // Use WeakRef if available to allow GC, otherwise fall back to direct reference
+    // This prevents memory leaks while keeping transformers working
+    if (typeof globalThis.WeakRef !== "undefined") {
+      _siteSettingsRef = new globalThis.WeakRef(siteSettings);
+    } else {
+      _siteSettingsRef = siteSettings;
     }
 
     withPluginApi(initWithApi);

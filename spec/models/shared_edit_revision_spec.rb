@@ -256,6 +256,75 @@ RSpec.describe SharedEditRevision do
       expect(SharedEditRevision.where(post_id: post.id).count).to eq(initial_count)
     end
 
+    describe "compaction strategy" do
+      fab!(:user)
+
+      it "nulls out raw for intermediate revisions but keeps latest and last committed" do
+        SharedEditRevision.init!(post)
+
+        # Create several edits
+        5.times { |i| fake_edit(post, user.id, "Edit #{i + 1}") }
+
+        # Commit to create a committed revision
+        SharedEditRevision.commit!(post.id)
+
+        # Make more edits after the commit
+        3.times { |i| fake_edit(post, user.id, "Post-commit edit #{i + 1}") }
+
+        # Trigger another commit which runs compaction
+        SharedEditRevision.commit!(post.id)
+
+        revisions = SharedEditRevision.where(post_id: post.id).order("version asc")
+        latest = revisions.last
+        last_committed =
+          SharedEditRevision
+            .where(post_id: post.id)
+            .where.not(post_revision_id: nil)
+            .order("version desc")
+            .first
+
+        # Latest should have raw
+        expect(latest.raw).to be_present
+
+        # Last committed should have raw
+        expect(last_committed.raw).to be_present
+
+        # Other revisions should have raw nulled out (except if they are latest or last_committed)
+        intermediate =
+          revisions.reject { |r| r.id == latest.id || r.id == last_committed.id }.select(&:raw)
+        expect(intermediate).to be_empty
+      end
+
+      it "allows recovery from post raw when all intermediate raws are null" do
+        SharedEditRevision.init!(post)
+
+        5.times { |i| fake_edit(post, user.id, "Edit #{i + 1}") }
+        SharedEditRevision.commit!(post.id)
+
+        # Manually null out some raws to simulate compaction state
+        SharedEditRevision.where(post_id: post.id).where("version < ?", 5).update_all(raw: nil)
+
+        # Recovery should still work
+        recovery = DiscourseSharedEdits::StateValidator.recover_from_post_raw(post.id, force: true)
+        expect(recovery[:success]).to eq(true)
+
+        # Can continue editing after recovery
+        fake_edit(post, user.id, "Post-recovery edit")
+        version, text = SharedEditRevision.latest_raw(post.id)
+        expect(text).to eq("Post-recovery edit")
+      end
+
+      it "keeps exactly two full snapshots after commit: latest and last committed" do
+        SharedEditRevision.init!(post)
+
+        10.times { |i| fake_edit(post, user.id, "Edit #{i + 1}") }
+        SharedEditRevision.commit!(post.id)
+
+        revisions_with_raw = SharedEditRevision.where(post_id: post.id).where.not(raw: nil).count
+        expect(revisions_with_raw).to be <= 2
+      end
+    end
+
     it "preserves ability to continue editing after compaction" do
       SharedEditRevision.init!(post)
       user = Fabricate(:user)

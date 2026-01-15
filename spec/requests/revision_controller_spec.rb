@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 RSpec.describe DiscourseSharedEdits::RevisionController do
-  fab!(:post1) { Fabricate(:post, raw: "Hello World, testing shared edits") }
-  fab!(:admin)
   fab!(:user)
+  fab!(:post1) { Fabricate(:post, user: user, raw: "Hello World, testing shared edits") }
+  fab!(:admin)
 
   describe "#enable" do
     context "when admin" do
@@ -68,7 +68,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
   describe "#latest" do
     before do
-      sign_in user
+      sign_in admin
       SharedEditRevision.toggle_shared_edits!(post1.id, true)
     end
 
@@ -163,7 +163,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
   end
 
   describe "#commit" do
-    before { sign_in user }
+    before { sign_in admin }
 
     it "commits pending changes to the post" do
       SharedEditRevision.toggle_shared_edits!(post1.id, true)
@@ -189,11 +189,16 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       put "/shared_edits/p/999999/commit"
       expect(response.status).to eq(404)
     end
+
+    it "returns 404 when shared edits are not enabled on the post" do
+      put "/shared_edits/p/#{post1.id}/commit"
+      expect(response.status).to eq(404)
+    end
   end
 
   describe "#revise" do
     before do
-      sign_in user
+      sign_in admin
       SharedEditRevision.toggle_shared_edits!(post1.id, true)
     end
 
@@ -223,8 +228,43 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(response.status).to eq(400)
     end
 
-    it "requires update parameter" do
+    it "requires update or awareness parameter" do
       put "/shared_edits/p/#{post1.id}", params: { client_id: "abc" }
+      expect(response.status).to eq(400)
+    end
+
+    it "accepts awareness-only updates without document update" do
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post1.id}") do
+          put "/shared_edits/p/#{post1.id}",
+              params: {
+                client_id: "abc",
+                awareness: Base64.strict_encode64("awareness_data"),
+              }
+        end
+
+      expect(response.status).to eq(200)
+      expect(messages.length).to eq(1)
+      expect(messages.first.data[:awareness]).to be_present
+      expect(messages.first.data[:client_id]).to eq("abc")
+    end
+
+    it "does not create revision for awareness-only updates" do
+      initial_count = SharedEditRevision.where(post_id: post1.id).count
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            awareness: Base64.strict_encode64("awareness_data"),
+          }
+
+      expect(response.status).to eq(200)
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
+    end
+
+    it "rejects invalid awareness payloads" do
+      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", awareness: "not-base64" }
+
       expect(response.status).to eq(400)
     end
 
@@ -289,6 +329,31 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(response.status).to eq(409)
       expect(response.parsed_body["error"]).to eq("state_recovered")
       expect(response.parsed_body["recovered_version"]).to eq(1)
+    end
+
+    it "returns 404 when shared edits not enabled on post" do
+      post1.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
+      post1.save_custom_fields
+
+      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: "test" }
+
+      expect(response.status).to eq(404)
+    end
+
+    it "returns 403 when the user cannot edit the post" do
+      other_user = Fabricate(:user)
+      sign_in(other_user)
+
+      latest_state = latest_state_for(post1)
+      new_text = "Collaborative edit from another user"
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "other-client",
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+          }
+
+      expect(response.status).to eq(403)
     end
   end
 
@@ -401,7 +466,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
   describe "#latest with automatic recovery" do
     before do
-      sign_in user
+      sign_in admin
       SharedEditRevision.toggle_shared_edits!(post1.id, true)
     end
 

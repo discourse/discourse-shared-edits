@@ -59,3 +59,33 @@
     top: 1.2em;
   }
 }
+
+// Rich text mode cursor styles (from hello.html:248-268)
+// Used by y-prosemirror's yCursorPlugin
+.ProseMirror-yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid;
+  pointer-events: none;
+
+  > div {
+    position: absolute;
+    top: -1.2em;
+    left: -2px;
+    font-size: 9px; // hello.html:260
+    font-weight: 500; // hello.html:261
+    padding: 1px 4px; // hello.html:262
+    border-radius: 3px;
+    color: white;
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+    z-index: 10;
+
+    // Flip label below cursor when near the top of the editor (first line)
+    &.ProseMirror-yjs-cursor__label--below {
+      top: 1.1em;
+    }
+  }
+}

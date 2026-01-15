@@ -1,24 +1,153 @@
-import { throttle } from "@ember/runloop";
+import { debounce, throttle } from "@ember/runloop";
 import Service, { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import loadScript from "discourse/lib/load-script";
+import { i18n } from "discourse-i18n";
 import CursorOverlay from "../lib/cursor-overlay";
+import {
+  clearSharedEditYjsState,
+  setSharedEditYjsState,
+} from "../lib/shared-edits-prosemirror-extension";
 
 const THROTTLE_SAVE = 350;
 const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
 const SPELLCHECK_SUSPEND_DURATION_MS = 1000;
-
 let yjsPromise;
+let yjsProsemirrorPromise;
+
+// Namespaced storage for ProseMirror references to avoid polluting window
+// The yjs-prosemirror bundle's require shim reads from this namespace
+const PM_NAMESPACE = "__sharedEditsProseMirror";
+
+export function capturePM(params) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  // Store in namespaced object to avoid global pollution.
+  // The yjs-prosemirror bundle's require shim reads from this namespace.
+  window[PM_NAMESPACE] = {
+    pmState: params.pmState,
+    pmView: params.pmView,
+    pmModel: params.pmModel,
+    pmTransform: params.pmTransform,
+    pmCommands: params.pmCommands,
+    pmHistory: params.pmHistory,
+    pmInputrules: params.pmInputrules,
+    pmKeymap: params.pmKeymap,
+  };
+}
+
+export function clearPM() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  delete window[PM_NAMESPACE];
+}
+
+export function getPM() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window[PM_NAMESPACE] || null;
+}
+
+// Store reference to convertToMarkdown for proper serialization of rich content
+// This allows images, links, etc. to be converted back to markdown on commit
+let convertToMarkdownFn = null;
+let prosemirrorViewGetter = null;
+let capturedMarkdown = null;
+
+export function setConvertToMarkdown(fn) {
+  convertToMarkdownFn = fn;
+}
+
+export function setProsemirrorViewGetter(getter) {
+  prosemirrorViewGetter = getter;
+}
+
+export function setCapturedMarkdown(markdown) {
+  capturedMarkdown = markdown;
+}
+
+export function clearRichModeSerializers() {
+  convertToMarkdownFn = null;
+  prosemirrorViewGetter = null;
+  capturedMarkdown = null;
+}
+
+export function getMarkdownFromView() {
+  // First check if we have captured markdown (from view destroy)
+  if (capturedMarkdown !== null) {
+    return capturedMarkdown;
+  }
+
+  if (!convertToMarkdownFn || !prosemirrorViewGetter) {
+    return null;
+  }
+
+  const view = prosemirrorViewGetter();
+
+  if (!view || view.isDestroyed) {
+    return null;
+  }
+
+  try {
+    return convertToMarkdownFn(view.state.doc);
+  } catch {
+    return null;
+  }
+}
 
 async function ensureYjsLoaded() {
   if (!yjsPromise) {
-    yjsPromise = loadScript(
-      "/plugins/discourse-shared-edits/javascripts/yjs-dist.js"
-    ).then(() => window.Y);
+    return triggerYjsLoad();
+  }
+  return yjsPromise;
+}
+
+export function triggerYjsLoad() {
+  if (!yjsPromise) {
+    yjsPromise = (async () => {
+      await loadScript(
+        "/plugins/discourse-shared-edits/javascripts/yjs-dist.js"
+      );
+      return window.Y;
+    })().catch((e) => {
+      yjsPromise = null;
+      throw e;
+    });
+  }
+  return yjsPromise;
+}
+
+export function ensureYjsProsemirrorLoaded() {
+  if (!yjsProsemirrorPromise) {
+    yjsProsemirrorPromise = (async () => {
+      await ensureYjsLoaded();
+
+      // Check the namespaced PM object for required modules
+      const pm = getPM();
+      if (!pm?.pmState || !pm?.pmView || !pm?.pmModel) {
+        throw new Error(
+          "ProseMirror modules missing - ensure capturePM() was called"
+        );
+      }
+
+      await loadScript(
+        "/plugins/discourse-shared-edits/javascripts/yjs-prosemirror.js"
+      );
+
+      return window.SharedEditsYjs;
+    })().catch((e) => {
+      yjsProsemirrorPromise = null;
+      throw e;
+    });
   }
 
-  return yjsPromise;
+  return yjsProsemirrorPromise;
 }
 
 function base64ToUint8Array(str) {
@@ -135,9 +264,23 @@ function transformSelection(selection, delta) {
   return { start, end };
 }
 
+// User colors for cursor display (from hello.html pattern)
+const USER_COLORS = [
+  { color: "#3b82f6", colorLight: "#dbeafe" }, // blue
+  { color: "#22c55e", colorLight: "#dcfce7" }, // green
+  { color: "#f59e0b", colorLight: "#fef3c7" }, // amber
+  { color: "#ef4444", colorLight: "#fee2e2" }, // red
+  { color: "#8b5cf6", colorLight: "#ede9fe" }, // violet
+  { color: "#ec4899", colorLight: "#fce7f3" }, // pink
+  { color: "#06b6d4", colorLight: "#cffafe" }, // cyan
+];
+
 export default class SharedEditManager extends Service {
   @service composer;
   @service messageBus;
+  @service siteSettings;
+  @service currentUser;
+  @service dialog;
 
   ajaxInProgress = false;
   doc = null;
@@ -148,6 +291,17 @@ export default class SharedEditManager extends Service {
   textObserver = null;
   /** @type {Promise<void>|null} - for eslint */
   inFlightRequest = null;
+  messageBusLastId = null;
+  pendingComposerReply = null;
+  // Rich mode properties (hello.html:480-481, 547)
+  awareness = null;
+  xmlFragment = null;
+  pendingAwarenessUpdate = null;
+  #composerReady = false;
+  #composerObserverAttached = false;
+  #messageBusPostId = null;
+  #messageBusLastSubscribedId = null;
+
   #pendingRelativeSelection = null;
   #isSelecting = false;
   #selectionListenersAttached = false;
@@ -155,7 +309,7 @@ export default class SharedEditManager extends Service {
   #spellcheckTimeoutId = null;
   #spellcheckRestoreValue = null;
   #spellcheckTextarea = null;
-
+  #syncingTextFromComposer = false;
   #onRemoteMessage = (message) => {
     if (message.action === "resync") {
       this.#handleResync();
@@ -166,10 +320,32 @@ export default class SharedEditManager extends Service {
       return;
     }
 
-    if (message.update) {
-      this.#temporarilyDisableSpellcheck();
+    if (this.isRichMode && message.awareness) {
+      const { applyAwarenessUpdate } = window.SharedEditsYjs;
+      applyAwarenessUpdate(
+        this.awareness,
+        base64ToUint8Array(message.awareness),
+        "sync" // Critical: prevents re-broadcasting (hello.html:490)
+      );
     }
 
+    if (message.update) {
+      // Markdown mode: disable spellcheck during remote updates
+      if (!this.isRichMode) {
+        this.#temporarilyDisableSpellcheck();
+      }
+    }
+
+    // Rich mode: Yjs handles everything via ySyncPlugin
+    if (this.isRichMode) {
+      if (message.update) {
+        const update = base64ToUint8Array(message.update);
+        window.Y.applyUpdate(this.doc, update, "remote");
+      }
+      return;
+    }
+
+    // Markdown mode: handle cursor and text sync manually
     if (!this.#isSelecting) {
       this.#pendingRelativeSelection = this.#captureRelativeSelection();
     }
@@ -185,7 +361,6 @@ export default class SharedEditManager extends Service {
       cursor,
     });
   };
-
   #handleDocUpdate = (update, origin) => {
     if (origin !== this && origin !== this.undoManager) {
       return;
@@ -194,12 +369,10 @@ export default class SharedEditManager extends Service {
     this.pendingUpdates.push(update);
     this.#sendUpdatesThrottled();
   };
-
   #onTextareaMouseDown = () => {
     this.#isSelecting = true;
     this.#skippedUpdatesDuringSelection = false;
   };
-
   #onTextareaKeydown = (event) => {
     if (!this.undoManager) {
       return;
@@ -221,7 +394,6 @@ export default class SharedEditManager extends Service {
       this.undoManager.redo();
     }
   };
-
   #onTextareaMouseUp = () => {
     const hadSkippedUpdates = this.#skippedUpdatesDuringSelection;
 
@@ -241,10 +413,65 @@ export default class SharedEditManager extends Service {
       this.#skippedUpdatesDuringSelection = false;
     }
   };
+  // Follow hello.html:460-477 pattern - handle doc updates in rich mode
+  #handleRichDocUpdate = (update, origin) => {
+    // Only send updates from local changes, not remote ones
+    // Include "xmlSync" updates so Y.Text changes reach the server for commit
+    if (origin !== "remote" && origin !== "sync") {
+      this.pendingUpdates.push(update);
+      // Don't trigger immediate send for xmlSync - let it batch with ProseMirror updates
+      if (!this.#syncingTextFromComposer && origin !== "xmlSync") {
+        this.#sendUpdatesThrottled();
+      }
+    }
+  };
+  // Follow hello.html:484-503 pattern - handle awareness updates
+  #handleAwarenessUpdate = ({ added, updated, removed }, origin) => {
+    if (origin !== "sync") {
+      const { encodeAwarenessUpdate } = window.SharedEditsYjs;
+      const clientIds = [...added, ...updated, ...removed];
+      if (clientIds.length > 0) {
+        this.pendingAwarenessUpdate = encodeAwarenessUpdate(
+          this.awareness,
+          clientIds
+        );
+        this.#sendUpdatesThrottled();
+      }
+    }
+  };
+  #onRichModeFailure = (error) => {
+    if (this._richModeFailed || this._handlingRichModeFailure) {
+      return;
+    }
+
+    this._richModeFailed = true;
+    this._handlingRichModeFailure = true;
+
+    // eslint-disable-next-line no-console
+    console.error("[SharedEdits] Rich mode collaboration failed:", error);
+    this.dialog.alert(i18n("shared_edits.errors.rich_mode_failed"));
+
+    if (this.composer?.model?.action === "sharedEdit") {
+      this.composer.close();
+    } else {
+      this.commit();
+    }
+
+    this._handlingRichModeFailure = false;
+  };
+  _handlingRichModeFailure = false;
 
   willDestroy() {
     this.#resetSpellcheckSuppression();
     super.willDestroy(...arguments);
+  }
+
+  get isRichMode() {
+    // If rich mode setup failed, don't attempt it again for this session
+    if (this._richModeFailed) {
+      return false;
+    }
+    return this.siteSettings.shared_edits_editor_mode === "rich";
   }
 
   #getTextareaSelection() {
@@ -389,41 +616,114 @@ export default class SharedEditManager extends Service {
       if (!this.composer.model || this.isDestroying || this.isDestroyed) {
         return;
       }
-      this.#setupDoc(data.state, data.raw);
+      await this.#setupDoc(data.state, data.raw);
+      this.messageBusLastId = data.message_bus_last_id ?? -1;
+      this.pendingComposerReply = this.text?.toString() ?? data.raw ?? "";
+      this.#composerReady = false;
+      await this.finalizeSubscription();
     } catch (e) {
       popupAjaxError(e);
     }
   }
 
-  async subscribe() {
+  async subscribe(postId, { preOpen = false } = {}) {
+    let data;
     try {
-      const postId = this.#postId;
+      postId = postId || this.#postId;
 
       if (!postId) {
         return;
       }
 
-      const data = await ajax(`/shared_edits/p/${postId}`);
+      // If already subscribing or subscribed to another post, don't overlap
+      if (this.ajaxInProgress && this.currentPostId !== postId) {
+        return;
+      }
 
-      if (!this.composer.model || this.isDestroying || this.isDestroyed) {
+      if (this.currentPostId === postId && this.doc) {
+        if (!preOpen) {
+          await this.finalizeSubscription();
+        }
+        return { reply: this.pendingComposerReply ?? this.text?.toString() };
+      }
+
+      this.ajaxInProgress = true;
+      data = await ajax(`/shared_edits/p/${postId}`);
+    } catch (e) {
+      popupAjaxError(e);
+      return;
+    } finally {
+      this.ajaxInProgress = false;
+    }
+
+    try {
+      if (
+        this.isDestroying ||
+        this.isDestroyed ||
+        (this.#postId && this.#postId !== postId)
+      ) {
         return;
       }
 
       this.currentPostId = postId;
-      this.#setupDoc(data.state, data.raw);
+      await this.#setupDoc(data.state, data.raw);
+      this.messageBusLastId = data.message_bus_last_id ?? -1;
+      this.pendingComposerReply = this.text?.toString() ?? data.raw ?? "";
+      this.#composerReady = false;
 
-      this.addObserver("composer.model.reply", this, this.#onComposerChange);
+      if (!preOpen) {
+        await this.finalizeSubscription();
+      }
 
-      // Subscribe starting from the message_bus_last_id returned with the state
-      // to ensure we don't miss any messages that arrived between fetching
-      // the state and subscribing
-      this.messageBus.subscribe(
-        `/shared_edits/${postId}`,
-        this.#onRemoteMessage,
-        data.message_bus_last_id ?? -1
-      );
+      return { reply: this.pendingComposerReply };
     } catch (e) {
       popupAjaxError(e);
+      return;
+    }
+  }
+
+  async finalizeSubscription() {
+    const postId = this.currentPostId || this.#postId;
+    if (!postId || !this.doc || this.isDestroying || this.isDestroyed) {
+      return;
+    }
+
+    // Wait for textarea to appear in DOM (composer may still be rendering)
+    // This is needed because super.open() returns before Ember finishes rendering
+    if (!this.isRichMode) {
+      await this.#waitForTextarea();
+    }
+
+    if (this.#syncComposerFromDoc()) {
+      this.pendingComposerReply = null;
+      this.#composerReady = true;
+    }
+
+    if (!this.isRichMode) {
+      this.#attachSelectionListeners();
+      if (!this.cursorOverlay) {
+        const textarea = document.querySelector(TEXTAREA_SELECTOR);
+        if (textarea) {
+          this.cursorOverlay = new CursorOverlay(textarea);
+        }
+      }
+    }
+
+    this.#attachComposerObserver();
+    this.#subscribeMessageBus(postId);
+  }
+
+  async #waitForTextarea(maxWait = 2000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWait) {
+      if (this.isDestroying || this.isDestroyed) {
+        return;
+      }
+      const textarea = document.querySelector(TEXTAREA_SELECTOR);
+      if (textarea) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
 
@@ -437,7 +737,7 @@ export default class SharedEditManager extends Service {
     try {
       await this.#flushPendingUpdates();
 
-      this.removeObserver("composer.model.reply", this, this.#onComposerChange);
+      this.#detachComposerObserver();
       this.messageBus.unsubscribe(`/shared_edits/${postId}`);
       this.#teardownDoc();
       this.pendingUpdates = [];
@@ -454,6 +754,28 @@ export default class SharedEditManager extends Service {
   async #setupDoc(state, raw) {
     this.#teardownDoc();
 
+    if (this.isRichMode) {
+      try {
+        await this.#setupRichDoc(state);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[SharedEdits] Rich mode setup failed, falling back to markdown:",
+          error
+        );
+        // Clean up any partial rich mode setup
+        this.#teardownDoc();
+        // Fall back to markdown mode
+        this._richModeFailed = true;
+        await this.#setupMarkdownDoc(state, raw);
+      }
+    } else {
+      await this.#setupMarkdownDoc(state, raw);
+    }
+  }
+
+  // Markdown mode setup - uses Y.Text (original implementation)
+  async #setupMarkdownDoc(state, raw) {
     const Y = await ensureYjsLoaded();
 
     this.doc = new Y.Doc();
@@ -483,21 +805,162 @@ export default class SharedEditManager extends Service {
     if (textarea) {
       this.cursorOverlay = new CursorOverlay(textarea);
     }
+  }
 
-    this.suppressComposerChange = true;
-    this.composer.model.set("reply", this.text.toString());
-    this.suppressComposerChange = false;
+  // Rich mode setup - uses Y.XmlFragment with y-prosemirror
+  // Consult hello.html lines 455-506 for the setup pattern
+  async #setupRichDoc(state) {
+    await ensureYjsLoaded();
+
+    const SharedEditsYjs = window.SharedEditsYjs;
+    if (!SharedEditsYjs) {
+      throw new Error("SharedEditsYjs not loaded - Yjs bundle may be missing");
+    }
+
+    const { Y, Awareness } = SharedEditsYjs;
+    if (!Y || !Awareness) {
+      throw new Error("Yjs or Awareness not available in SharedEditsYjs");
+    }
+
+    // From hello.html:456 - Create Y.Doc
+    this.doc = new Y.Doc();
+
+    // From hello.html:547 - Get XmlFragment (not Y.Text!)
+    this.xmlFragment = this.doc.getXmlFragment("prosemirror");
+    this.text = this.doc.getText("post");
+
+    // From hello.html:480 - Create Awareness
+    this.awareness = new Awareness(this.doc);
+
+    // From hello.html:505-506 - Set user state for cursor display
+    const userColors = this.#getUserColors();
+    this.awareness.setLocalStateField("user", {
+      name: this.currentUser?.username || "Anonymous",
+      color: userColors.color,
+      colorLight: userColors.colorLight,
+    });
+
+    // Apply initial state (like hello.html but from server)
+    const initialUpdate = base64ToUint8Array(state);
+    if (initialUpdate.length > 0) {
+      Y.applyUpdate(this.doc, initialUpdate, "remote");
+    }
+
+    const hasXmlContent = this.xmlFragment.length > 0;
+
+    // Set state for ProseMirror extension to pick up
+    // The extension's plugins() function will read this
+    setSharedEditYjsState({
+      xmlFragment: this.xmlFragment,
+      awareness: this.awareness,
+      seedXmlFromView: !hasXmlContent,
+      onError: this.#onRichModeFailure,
+    });
+
+    // From hello.html:460-477 - Setup doc update handler
+    this.doc.on("update", this.#handleRichDocUpdate);
+
+    // From hello.html:484-503 - Setup awareness update handler
+    this.awareness.on("update", this.#handleAwarenessUpdate);
+
+    // Observe XmlFragment changes to keep Y.Text in sync for server-side commit
+    // The server extracts text from Y.Text("post"), so we need to keep it updated.
+    // Debounce to avoid heavy work on every keystroke.
+    this.xmlFragmentObserver = () => {
+      debounce(this, this.#syncYTextFromXmlFragment, 500);
+    };
+    this.xmlFragment.observeDeep(this.xmlFragmentObserver);
+  }
+
+  // Extract content from ProseMirror and sync to Y.Text
+  // This ensures the server can extract the correct text on commit
+  // Uses proper markdown serialization to preserve images, links, etc.
+  // Returns true if sync was performed, false otherwise
+  #syncYTextFromXmlFragment() {
+    if (
+      !this.xmlFragment ||
+      this.xmlFragment.length === 0 ||
+      !this.text ||
+      !this.doc ||
+      this.isDestroying ||
+      this.isDestroyed
+    ) {
+      return false;
+    }
+
+    // Try proper markdown serialization first (handles images, links, etc.)
+    // Falls back to text extraction if serializer not available
+    let newText = getMarkdownFromView();
+    if (newText === null) {
+      newText = this.#extractTextFromXmlFragment(this.xmlFragment);
+    }
+
+    const currentText = this.text.toString();
+
+    if (newText === currentText) {
+      return false;
+    }
+
+    // Use a transaction to update Y.Text without triggering our own handlers
+    // Use applyDiff instead of full wipe/refill for efficiency
+    this.doc.transact(() => {
+      applyDiff(this.text, currentText, newText);
+    }, "xmlSync");
+
+    return true;
+  }
+
+  // Recursively extract text content from XmlFragment
+  #extractTextFromXmlFragment(fragment) {
+    let text = "";
+
+    const processNode = (node) => {
+      if (typeof node === "string") {
+        text += node;
+      } else if (node.toString && !node.nodeName) {
+        // This is likely an XmlText node (no nodeName, has toString)
+        const str = node.toString();
+        if (str) {
+          text += str;
+        }
+      } else if (node.forEach) {
+        // This is an XmlElement or XmlFragment
+        node.forEach(processNode);
+      }
+    };
+
+    fragment.forEach((child) => {
+      processNode(child);
+      // Add newline between top-level block elements
+      text += "\n";
+    });
+
+    // Trim trailing newline
+    return text.replace(/\n+$/, "");
+  }
+
+  // Get user colors based on user ID (hello.html pattern)
+  #getUserColors() {
+    const userId = this.currentUser?.id || 0;
+    return USER_COLORS[userId % USER_COLORS.length];
   }
 
   #teardownDoc() {
     this.#resetSpellcheckSuppression();
+    this.#detachComposerObserver();
 
+    if (this.#messageBusPostId) {
+      this.messageBus.unsubscribe(`/shared_edits/${this.#messageBusPostId}`);
+    }
+
+    // Markdown mode cleanup
     if (this.text && this.textObserver) {
       this.text.unobserve(this.textObserver);
     }
 
     if (this.doc) {
       this.doc.off("update", this.#handleDocUpdate);
+      this.doc.off("update", this.#handleRichDocUpdate);
     }
 
     if (this.undoManager) {
@@ -512,9 +975,39 @@ export default class SharedEditManager extends Service {
       this.cursorOverlay = null;
     }
 
+    // Rich mode cleanup
+    if (this.xmlFragment && this.xmlFragmentObserver) {
+      this.xmlFragment.unobserveDeep(this.xmlFragmentObserver);
+      this.xmlFragmentObserver = null;
+    }
+
+    if (this.awareness) {
+      this.awareness.off("update", this.#handleAwarenessUpdate);
+      this.awareness.destroy();
+      this.awareness = null;
+    }
+
+    // Clear the ProseMirror extension state
+    clearSharedEditYjsState();
+
+    // Destroy the Yjs document to clean up internal state
+    if (this.doc) {
+      this.doc.destroy();
+    }
+
     this.doc = null;
     this.text = null;
     this.textObserver = null;
+    this.xmlFragment = null;
+    this.pendingAwarenessUpdate = null;
+    this.pendingComposerReply = null;
+    this.messageBusLastId = null;
+    this.#composerReady = false;
+    this.#messageBusPostId = null;
+    this.#messageBusLastSubscribedId = null;
+    this._handlingRichModeFailure = false;
+    // Reset rich mode failure flag on full teardown so next subscription can try again
+    this._richModeFailed = false;
   }
 
   #attachSelectionListeners() {
@@ -549,23 +1042,97 @@ export default class SharedEditManager extends Service {
     this.#isSelecting = false;
   }
 
+  #attachComposerObserver() {
+    if (this.#composerObserverAttached) {
+      return;
+    }
+
+    this.addObserver("composer.model.reply", this, this.#onComposerChange);
+    this.#composerObserverAttached = true;
+  }
+
+  #detachComposerObserver() {
+    if (!this.#composerObserverAttached) {
+      return;
+    }
+
+    this.removeObserver("composer.model.reply", this, this.#onComposerChange);
+    this.#composerObserverAttached = false;
+  }
+
+  #syncComposerFromDoc() {
+    if (!this.composer.model || !this.text) {
+      return false;
+    }
+
+    const next = this.pendingComposerReply ?? this.text.toString();
+    if (this.composer.model.reply === next) {
+      return true;
+    }
+
+    this.suppressComposerChange = true;
+    this.composer.model.set("reply", next);
+    this.suppressComposerChange = false;
+    return true;
+  }
+
+  #subscribeMessageBus(postId) {
+    if (!postId) {
+      return;
+    }
+
+    const lastId = this.messageBusLastId ?? -1;
+    const needsResubscribe =
+      this.#messageBusPostId !== postId ||
+      this.#messageBusLastSubscribedId !== lastId;
+
+    if (!needsResubscribe) {
+      return;
+    }
+
+    if (this.#messageBusPostId) {
+      this.messageBus.unsubscribe(`/shared_edits/${this.#messageBusPostId}`);
+    }
+
+    this.messageBus.subscribe(
+      `/shared_edits/${postId}`,
+      this.#onRemoteMessage,
+      lastId
+    );
+    this.#messageBusPostId = postId;
+    this.#messageBusLastSubscribedId = lastId;
+  }
+
   get #postId() {
     return this.composer.model?.post.id;
   }
 
-  #onComposerChange() {
-    if (!this.composer.model || !this.text || this.suppressComposerChange) {
+  syncFromComposerValue(nextValue) {
+    if (
+      !this.#composerReady ||
+      !this.text ||
+      !this.doc ||
+      this.suppressComposerChange
+    ) {
       return;
     }
 
+    const next = nextValue ?? "";
     const current = this.text.toString();
-    const next = this.composer.model.reply || "";
 
     if (current === next) {
       return;
     }
 
     this.doc.transact(() => applyDiff(this.text, current, next), this);
+  }
+
+  #onComposerChange() {
+    if (!this.composer.model) {
+      return;
+    }
+
+    this.syncFromComposerValue(this.composer.model.reply || "");
   }
 
   #handleTextChange(event, transaction) {
@@ -866,6 +1433,30 @@ export default class SharedEditManager extends Service {
     this.#applySpellcheckRestore();
   }
 
+  #syncTextFromComposer() {
+    if (
+      !this.isRichMode ||
+      !this.#composerReady ||
+      !this.composer.model ||
+      !this.text ||
+      this.suppressComposerChange
+    ) {
+      return;
+    }
+
+    this.#syncingTextFromComposer = true;
+    try {
+      const current = this.text.toString();
+      const next = this.composer.model.reply || "";
+
+      if (current !== next) {
+        this.doc.transact(() => applyDiff(this.text, current, next), this);
+      }
+    } finally {
+      this.#syncingTextFromComposer = false;
+    }
+  }
+
   #sendUpdatesThrottled() {
     // Use throttle instead of debounce so updates sync periodically during
     // continuous typing, not just when typing stops. With immediate=true,
@@ -878,7 +1469,24 @@ export default class SharedEditManager extends Service {
       await this.inFlightRequest;
     }
 
-    if (this.pendingUpdates.length) {
+    if (this.isRichMode && this.doc && this.text) {
+      // Cancel any pending debounced sync by running it immediately
+      // This is critical to ensure Y.Text has the latest content before commit
+      const didSync = this.#syncYTextFromXmlFragment();
+
+      // If we synced, the transaction will have created a pending update
+      // Give it a moment to be processed
+      if (didSync && this.pendingUpdates.length === 0) {
+        // Force capture any updates that the sync generated
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    const hasUpdates =
+      this.pendingUpdates.length > 0 ||
+      (this.isRichMode && this.pendingAwarenessUpdate);
+
+    if (hasUpdates) {
       await this.#sendUpdates(true);
     }
 
@@ -890,7 +1498,18 @@ export default class SharedEditManager extends Service {
   async #sendUpdates(immediate = false) {
     const postId = this.currentPostId || this.#postId;
 
-    if (!this.doc || this.pendingUpdates.length === 0 || !postId) {
+    if (this.isRichMode && this.doc) {
+      this.#syncTextFromComposer();
+    }
+
+    const updatesToSend = [...this.pendingUpdates];
+    const awarenessToSend = this.pendingAwarenessUpdate;
+
+    // Check if we have anything to send
+    const hasDocUpdates = updatesToSend.length > 0;
+    const hasAwarenessUpdate = this.isRichMode && awarenessToSend;
+
+    if (!this.doc || (!hasDocUpdates && !hasAwarenessUpdate) || !postId) {
       return;
     }
 
@@ -905,26 +1524,37 @@ export default class SharedEditManager extends Service {
       }
     }
 
-    const payload =
-      this.pendingUpdates.length === 1
-        ? this.pendingUpdates[0]
-        : window.Y.mergeUpdates(this.pendingUpdates);
+    const data = {
+      client_id: this.messageBus.clientId,
+    };
 
-    const cursorPayload = this.#buildCursorPayload();
+    // Add doc update if present
+    if (hasDocUpdates) {
+      const payload =
+        updatesToSend.length === 1
+          ? updatesToSend[0]
+          : window.Y.mergeUpdates(updatesToSend);
+      data.update = uint8ArrayToBase64(payload);
+    }
 
-    this.pendingUpdates = [];
-    this.ajaxInProgress = true;
+    // Rich mode: include awareness update
+    if (hasAwarenessUpdate) {
+      data.awareness = uint8ArrayToBase64(awarenessToSend);
+    }
 
-    try {
-      const data = {
-        update: uint8ArrayToBase64(payload),
-        client_id: this.messageBus.clientId,
-      };
-
+    // Markdown mode: include cursor payload
+    if (!this.isRichMode) {
+      const cursorPayload = this.#buildCursorPayload();
       if (cursorPayload) {
         data.cursor = cursorPayload;
       }
+    }
 
+    this.pendingUpdates = [];
+    this.pendingAwarenessUpdate = null;
+    this.ajaxInProgress = true;
+
+    try {
       this.inFlightRequest = ajax(`/shared_edits/p/${postId}`, {
         method: "PUT",
         data,
@@ -938,6 +1568,14 @@ export default class SharedEditManager extends Service {
       ) {
         await this.#handleResync();
         return;
+      }
+
+      if (updatesToSend.length) {
+        this.pendingUpdates = updatesToSend.concat(this.pendingUpdates);
+      }
+
+      if (awarenessToSend && !this.pendingAwarenessUpdate) {
+        this.pendingAwarenessUpdate = awarenessToSend;
       }
       throw e;
     } finally {

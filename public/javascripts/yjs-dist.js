@@ -1,4 +1,4 @@
-var Y = (() => {
+var SharedEditsYjs = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -17,244 +17,15 @@ var Y = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.mjs
-  var yjs_exports = {};
-  __export(yjs_exports, {
-    AbsolutePosition: () => AbsolutePosition,
-    AbstractConnector: () => AbstractConnector,
-    AbstractStruct: () => AbstractStruct,
-    AbstractType: () => AbstractType,
-    Array: () => YArray,
-    ContentAny: () => ContentAny,
-    ContentBinary: () => ContentBinary,
-    ContentDeleted: () => ContentDeleted,
-    ContentDoc: () => ContentDoc,
-    ContentEmbed: () => ContentEmbed,
-    ContentFormat: () => ContentFormat,
-    ContentJSON: () => ContentJSON,
-    ContentString: () => ContentString,
-    ContentType: () => ContentType,
-    Doc: () => Doc,
-    GC: () => GC,
-    ID: () => ID,
-    Item: () => Item,
-    Map: () => YMap,
-    PermanentUserData: () => PermanentUserData,
-    RelativePosition: () => RelativePosition,
-    Skip: () => Skip,
-    Snapshot: () => Snapshot,
-    Text: () => YText,
-    Transaction: () => Transaction,
-    UndoManager: () => UndoManager,
-    UpdateDecoderV1: () => UpdateDecoderV1,
-    UpdateDecoderV2: () => UpdateDecoderV2,
-    UpdateEncoderV1: () => UpdateEncoderV1,
-    UpdateEncoderV2: () => UpdateEncoderV2,
-    XmlElement: () => YXmlElement,
-    XmlFragment: () => YXmlFragment,
-    XmlHook: () => YXmlHook,
-    XmlText: () => YXmlText,
-    YArrayEvent: () => YArrayEvent,
-    YEvent: () => YEvent,
-    YMapEvent: () => YMapEvent,
-    YTextEvent: () => YTextEvent,
-    YXmlEvent: () => YXmlEvent,
-    applyUpdate: () => applyUpdate,
-    applyUpdateV2: () => applyUpdateV2,
-    cleanupYTextFormatting: () => cleanupYTextFormatting,
-    compareIDs: () => compareIDs,
-    compareRelativePositions: () => compareRelativePositions,
-    convertUpdateFormatV1ToV2: () => convertUpdateFormatV1ToV2,
-    convertUpdateFormatV2ToV1: () => convertUpdateFormatV2ToV1,
-    createAbsolutePositionFromRelativePosition: () => createAbsolutePositionFromRelativePosition,
-    createDeleteSet: () => createDeleteSet,
-    createDeleteSetFromStructStore: () => createDeleteSetFromStructStore,
-    createDocFromSnapshot: () => createDocFromSnapshot,
-    createID: () => createID,
-    createRelativePositionFromJSON: () => createRelativePositionFromJSON,
-    createRelativePositionFromTypeIndex: () => createRelativePositionFromTypeIndex,
-    createSnapshot: () => createSnapshot,
-    decodeRelativePosition: () => decodeRelativePosition,
-    decodeSnapshot: () => decodeSnapshot,
-    decodeSnapshotV2: () => decodeSnapshotV2,
-    decodeStateVector: () => decodeStateVector,
-    decodeUpdate: () => decodeUpdate,
-    decodeUpdateV2: () => decodeUpdateV2,
-    diffUpdate: () => diffUpdate,
-    diffUpdateV2: () => diffUpdateV2,
-    emptySnapshot: () => emptySnapshot,
-    encodeRelativePosition: () => encodeRelativePosition,
-    encodeSnapshot: () => encodeSnapshot,
-    encodeSnapshotV2: () => encodeSnapshotV2,
-    encodeStateAsUpdate: () => encodeStateAsUpdate,
-    encodeStateAsUpdateV2: () => encodeStateAsUpdateV2,
-    encodeStateVector: () => encodeStateVector,
-    encodeStateVectorFromUpdate: () => encodeStateVectorFromUpdate,
-    encodeStateVectorFromUpdateV2: () => encodeStateVectorFromUpdateV2,
-    equalDeleteSets: () => equalDeleteSets,
-    equalSnapshots: () => equalSnapshots,
-    findIndexSS: () => findIndexSS,
-    findRootTypeKey: () => findRootTypeKey,
-    getItem: () => getItem,
-    getItemCleanEnd: () => getItemCleanEnd,
-    getItemCleanStart: () => getItemCleanStart,
-    getState: () => getState,
-    getTypeChildren: () => getTypeChildren,
-    isDeleted: () => isDeleted,
-    isParentOf: () => isParentOf,
-    iterateDeletedStructs: () => iterateDeletedStructs,
-    logType: () => logType,
-    logUpdate: () => logUpdate,
-    logUpdateV2: () => logUpdateV2,
-    mergeDeleteSets: () => mergeDeleteSets,
-    mergeUpdates: () => mergeUpdates,
-    mergeUpdatesV2: () => mergeUpdatesV2,
-    obfuscateUpdate: () => obfuscateUpdate,
-    obfuscateUpdateV2: () => obfuscateUpdateV2,
-    parseUpdateMeta: () => parseUpdateMeta,
-    parseUpdateMetaV2: () => parseUpdateMetaV2,
-    readUpdate: () => readUpdate,
-    readUpdateV2: () => readUpdateV2,
-    relativePositionToJSON: () => relativePositionToJSON,
-    snapshot: () => snapshot,
-    snapshotContainsUpdate: () => snapshotContainsUpdate,
-    transact: () => transact,
-    tryGc: () => tryGc,
-    typeListToArraySnapshot: () => typeListToArraySnapshot,
-    typeMapGetAllSnapshot: () => typeMapGetAllSnapshot,
-    typeMapGetSnapshot: () => typeMapGetSnapshot
+  // yjs-entry.js
+  var yjs_entry_exports = {};
+  __export(yjs_entry_exports, {
+    Awareness: () => Awareness,
+    Y: () => yjs_exports,
+    applyAwarenessUpdate: () => applyAwarenessUpdate,
+    encodeAwarenessUpdate: () => encodeAwarenessUpdate,
+    removeAwarenessStates: () => removeAwarenessStates
   });
-
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/map.js
-  var create = () => /* @__PURE__ */ new Map();
-  var copy = (m) => {
-    const r = create();
-    m.forEach((v, k) => {
-      r.set(k, v);
-    });
-    return r;
-  };
-  var setIfUndefined = (map2, key, createT) => {
-    let set = map2.get(key);
-    if (set === void 0) {
-      map2.set(key, set = createT());
-    }
-    return set;
-  };
-  var map = (m, f) => {
-    const res = [];
-    for (const [key, value] of m) {
-      res.push(f(value, key));
-    }
-    return res;
-  };
-  var any = (m, f) => {
-    for (const [key, value] of m) {
-      if (f(value, key)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/set.js
-  var create2 = () => /* @__PURE__ */ new Set();
-
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/array.js
-  var last = (arr) => arr[arr.length - 1];
-  var appendTo = (dest, src) => {
-    for (let i = 0; i < src.length; i++) {
-      dest.push(src[i]);
-    }
-  };
-  var from = Array.from;
-  var some = (arr, f) => {
-    for (let i = 0; i < arr.length; i++) {
-      if (f(arr[i], i, arr)) {
-        return true;
-      }
-    }
-    return false;
-  };
-  var unfold = (len, f) => {
-    const array = new Array(len);
-    for (let i = 0; i < len; i++) {
-      array[i] = f(i, array);
-    }
-    return array;
-  };
-  var isArray = Array.isArray;
-
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/observable.js
-  var ObservableV2 = class {
-    constructor() {
-      this._observers = create();
-    }
-    /**
-     * @template {keyof EVENTS & string} NAME
-     * @param {NAME} name
-     * @param {EVENTS[NAME]} f
-     */
-    on(name, f) {
-      setIfUndefined(
-        this._observers,
-        /** @type {string} */
-        name,
-        create2
-      ).add(f);
-      return f;
-    }
-    /**
-     * @template {keyof EVENTS & string} NAME
-     * @param {NAME} name
-     * @param {EVENTS[NAME]} f
-     */
-    once(name, f) {
-      const _f = (...args2) => {
-        this.off(
-          name,
-          /** @type {any} */
-          _f
-        );
-        f(...args2);
-      };
-      this.on(
-        name,
-        /** @type {any} */
-        _f
-      );
-    }
-    /**
-     * @template {keyof EVENTS & string} NAME
-     * @param {NAME} name
-     * @param {EVENTS[NAME]} f
-     */
-    off(name, f) {
-      const observers = this._observers.get(name);
-      if (observers !== void 0) {
-        observers.delete(f);
-        if (observers.size === 0) {
-          this._observers.delete(name);
-        }
-      }
-    }
-    /**
-     * Emit a named event. All registered event listeners that listen to the
-     * specified name will receive the event.
-     *
-     * @todo This should catch exceptions
-     *
-     * @template {keyof EVENTS & string} NAME
-     * @param {NAME} name The event name.
-     * @param {Parameters<EVENTS[NAME]>} args The arguments that are applied to the event listener.
-     */
-    emit(name, args2) {
-      return from((this._observers.get(name) || create()).values()).forEach((f) => f(...args2));
-    }
-    destroy() {
-      this._observers = create();
-    }
-  };
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/math.js
   var floor = Math.floor;
@@ -313,6 +84,34 @@ var Y = (() => {
   var isInteger = Number.isInteger || ((num) => typeof num === "number" && isFinite(num) && floor(num) === num);
   var isNaN2 = Number.isNaN;
   var parseInt = Number.parseInt;
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/set.js
+  var create = () => /* @__PURE__ */ new Set();
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/array.js
+  var last = (arr) => arr[arr.length - 1];
+  var appendTo = (dest, src) => {
+    for (let i = 0; i < src.length; i++) {
+      dest.push(src[i]);
+    }
+  };
+  var from = Array.from;
+  var some = (arr, f) => {
+    for (let i = 0; i < arr.length; i++) {
+      if (f(arr[i], i, arr)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  var unfold = (len, f) => {
+    const array = new Array(len);
+    for (let i = 0; i < len; i++) {
+      array[i] = f(i, array);
+    }
+    return array;
+  };
+  var isArray = Array.isArray;
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/string.js
   var fromCharCode = String.fromCharCode;
@@ -654,17 +453,17 @@ var Y = (() => {
   };
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/error.js
-  var create3 = (s) => new Error(s);
+  var create2 = (s) => new Error(s);
   var methodUnimplemented = () => {
-    throw create3("Method unimplemented");
+    throw create2("Method unimplemented");
   };
   var unexpectedCase = () => {
-    throw create3("Unexpected case");
+    throw create2("Unexpected case");
   };
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/decoding.js
-  var errorUnexpectedEndOfArray = create3("Unexpected end of array");
-  var errorIntegerOutOfRange = create3("Integer out of Range");
+  var errorUnexpectedEndOfArray = create2("Unexpected end of array");
+  var errorIntegerOutOfRange = create2("Integer out of Range");
   var Decoder = class {
     /**
      * @param {Uint8Array} uint8Array Binary data to decode
@@ -905,6 +704,399 @@ var Y = (() => {
     }
   };
 
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/time.js
+  var getUnixTime = Date.now;
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/map.js
+  var create3 = () => /* @__PURE__ */ new Map();
+  var copy = (m) => {
+    const r = create3();
+    m.forEach((v, k) => {
+      r.set(k, v);
+    });
+    return r;
+  };
+  var setIfUndefined = (map2, key, createT) => {
+    let set = map2.get(key);
+    if (set === void 0) {
+      map2.set(key, set = createT());
+    }
+    return set;
+  };
+  var map = (m, f) => {
+    const res = [];
+    for (const [key, value] of m) {
+      res.push(f(value, key));
+    }
+    return res;
+  };
+  var any = (m, f) => {
+    for (const [key, value] of m) {
+      if (f(value, key)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/observable.js
+  var ObservableV2 = class {
+    constructor() {
+      this._observers = create3();
+    }
+    /**
+     * @template {keyof EVENTS & string} NAME
+     * @param {NAME} name
+     * @param {EVENTS[NAME]} f
+     */
+    on(name, f) {
+      setIfUndefined(
+        this._observers,
+        /** @type {string} */
+        name,
+        create
+      ).add(f);
+      return f;
+    }
+    /**
+     * @template {keyof EVENTS & string} NAME
+     * @param {NAME} name
+     * @param {EVENTS[NAME]} f
+     */
+    once(name, f) {
+      const _f = (...args2) => {
+        this.off(
+          name,
+          /** @type {any} */
+          _f
+        );
+        f(...args2);
+      };
+      this.on(
+        name,
+        /** @type {any} */
+        _f
+      );
+    }
+    /**
+     * @template {keyof EVENTS & string} NAME
+     * @param {NAME} name
+     * @param {EVENTS[NAME]} f
+     */
+    off(name, f) {
+      const observers = this._observers.get(name);
+      if (observers !== void 0) {
+        observers.delete(f);
+        if (observers.size === 0) {
+          this._observers.delete(name);
+        }
+      }
+    }
+    /**
+     * Emit a named event. All registered event listeners that listen to the
+     * specified name will receive the event.
+     *
+     * @todo This should catch exceptions
+     *
+     * @template {keyof EVENTS & string} NAME
+     * @param {NAME} name The event name.
+     * @param {Parameters<EVENTS[NAME]>} args The arguments that are applied to the event listener.
+     */
+    emit(name, args2) {
+      return from((this._observers.get(name) || create3()).values()).forEach((f) => f(...args2));
+    }
+    destroy() {
+      this._observers = create3();
+    }
+  };
+  var Observable = class {
+    constructor() {
+      this._observers = create3();
+    }
+    /**
+     * @param {N} name
+     * @param {function} f
+     */
+    on(name, f) {
+      setIfUndefined(this._observers, name, create).add(f);
+    }
+    /**
+     * @param {N} name
+     * @param {function} f
+     */
+    once(name, f) {
+      const _f = (...args2) => {
+        this.off(name, _f);
+        f(...args2);
+      };
+      this.on(name, _f);
+    }
+    /**
+     * @param {N} name
+     * @param {function} f
+     */
+    off(name, f) {
+      const observers = this._observers.get(name);
+      if (observers !== void 0) {
+        observers.delete(f);
+        if (observers.size === 0) {
+          this._observers.delete(name);
+        }
+      }
+    }
+    /**
+     * Emit a named event. All registered event listeners that listen to the
+     * specified name will receive the event.
+     *
+     * @todo This should catch exceptions
+     *
+     * @param {N} name The event name.
+     * @param {Array<any>} args The arguments that are applied to the event listener.
+     */
+    emit(name, args2) {
+      return from((this._observers.get(name) || create3()).values()).forEach((f) => f(...args2));
+    }
+    destroy() {
+      this._observers = create3();
+    }
+  };
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/object.js
+  var assign = Object.assign;
+  var keys = Object.keys;
+  var forEach = (obj, f) => {
+    for (const key in obj) {
+      f(obj[key], key);
+    }
+  };
+  var length2 = (obj) => keys(obj).length;
+  var size = (obj) => keys(obj).length;
+  var isEmpty = (obj) => {
+    for (const _k in obj) {
+      return false;
+    }
+    return true;
+  };
+  var every = (obj, f) => {
+    for (const key in obj) {
+      if (!f(obj[key], key)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  var hasProperty = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  var equalFlat = (a, b) => a === b || size(a) === size(b) && every(a, (val, key) => (val !== void 0 || hasProperty(b, key)) && b[key] === val);
+  var freeze = Object.freeze;
+  var deepFreeze = (o) => {
+    for (const key in o) {
+      const c = o[key];
+      if (typeof c === "object" || typeof c === "function") {
+        deepFreeze(o[key]);
+      }
+    }
+    return freeze(o);
+  };
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/traits.js
+  var EqualityTraitSymbol = Symbol("Equality");
+
+  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/function.js
+  var callAll = (fs, args2, i = 0) => {
+    try {
+      for (; i < fs.length; i++) {
+        fs[i](...args2);
+      }
+    } finally {
+      if (i < fs.length) {
+        callAll(fs, args2, i + 1);
+      }
+    }
+  };
+  var id = (a) => a;
+  var equalityDeep = (a, b) => {
+    if (a === b) {
+      return true;
+    }
+    if (a == null || b == null || a.constructor !== b.constructor) {
+      return false;
+    }
+    if (a[EqualityTraitSymbol] != null) {
+      return a[EqualityTraitSymbol](b);
+    }
+    switch (a.constructor) {
+      case ArrayBuffer:
+        a = new Uint8Array(a);
+        b = new Uint8Array(b);
+      // eslint-disable-next-line no-fallthrough
+      case Uint8Array: {
+        if (a.byteLength !== b.byteLength) {
+          return false;
+        }
+        for (let i = 0; i < a.length; i++) {
+          if (a[i] !== b[i]) {
+            return false;
+          }
+        }
+        break;
+      }
+      case Set: {
+        if (a.size !== b.size) {
+          return false;
+        }
+        for (const value of a) {
+          if (!b.has(value)) {
+            return false;
+          }
+        }
+        break;
+      }
+      case Map: {
+        if (a.size !== b.size) {
+          return false;
+        }
+        for (const key of a.keys()) {
+          if (!b.has(key) || !equalityDeep(a.get(key), b.get(key))) {
+            return false;
+          }
+        }
+        break;
+      }
+      case Object:
+        if (length2(a) !== length2(b)) {
+          return false;
+        }
+        for (const key in a) {
+          if (!hasProperty(a, key) || !equalityDeep(a[key], b[key])) {
+            return false;
+          }
+        }
+        break;
+      case Array:
+        if (a.length !== b.length) {
+          return false;
+        }
+        for (let i = 0; i < a.length; i++) {
+          if (!equalityDeep(a[i], b[i])) {
+            return false;
+          }
+        }
+        break;
+      default:
+        return false;
+    }
+    return true;
+  };
+  var isOneOf = (value, options) => options.includes(value);
+
+  // node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.mjs
+  var yjs_exports = {};
+  __export(yjs_exports, {
+    AbsolutePosition: () => AbsolutePosition,
+    AbstractConnector: () => AbstractConnector,
+    AbstractStruct: () => AbstractStruct,
+    AbstractType: () => AbstractType,
+    Array: () => YArray,
+    ContentAny: () => ContentAny,
+    ContentBinary: () => ContentBinary,
+    ContentDeleted: () => ContentDeleted,
+    ContentDoc: () => ContentDoc,
+    ContentEmbed: () => ContentEmbed,
+    ContentFormat: () => ContentFormat,
+    ContentJSON: () => ContentJSON,
+    ContentString: () => ContentString,
+    ContentType: () => ContentType,
+    Doc: () => Doc,
+    GC: () => GC,
+    ID: () => ID,
+    Item: () => Item,
+    Map: () => YMap,
+    PermanentUserData: () => PermanentUserData,
+    RelativePosition: () => RelativePosition,
+    Skip: () => Skip,
+    Snapshot: () => Snapshot,
+    Text: () => YText,
+    Transaction: () => Transaction,
+    UndoManager: () => UndoManager,
+    UpdateDecoderV1: () => UpdateDecoderV1,
+    UpdateDecoderV2: () => UpdateDecoderV2,
+    UpdateEncoderV1: () => UpdateEncoderV1,
+    UpdateEncoderV2: () => UpdateEncoderV2,
+    XmlElement: () => YXmlElement,
+    XmlFragment: () => YXmlFragment,
+    XmlHook: () => YXmlHook,
+    XmlText: () => YXmlText,
+    YArrayEvent: () => YArrayEvent,
+    YEvent: () => YEvent,
+    YMapEvent: () => YMapEvent,
+    YTextEvent: () => YTextEvent,
+    YXmlEvent: () => YXmlEvent,
+    applyUpdate: () => applyUpdate,
+    applyUpdateV2: () => applyUpdateV2,
+    cleanupYTextFormatting: () => cleanupYTextFormatting,
+    compareIDs: () => compareIDs,
+    compareRelativePositions: () => compareRelativePositions,
+    convertUpdateFormatV1ToV2: () => convertUpdateFormatV1ToV2,
+    convertUpdateFormatV2ToV1: () => convertUpdateFormatV2ToV1,
+    createAbsolutePositionFromRelativePosition: () => createAbsolutePositionFromRelativePosition,
+    createDeleteSet: () => createDeleteSet,
+    createDeleteSetFromStructStore: () => createDeleteSetFromStructStore,
+    createDocFromSnapshot: () => createDocFromSnapshot,
+    createID: () => createID,
+    createRelativePositionFromJSON: () => createRelativePositionFromJSON,
+    createRelativePositionFromTypeIndex: () => createRelativePositionFromTypeIndex,
+    createSnapshot: () => createSnapshot,
+    decodeRelativePosition: () => decodeRelativePosition,
+    decodeSnapshot: () => decodeSnapshot,
+    decodeSnapshotV2: () => decodeSnapshotV2,
+    decodeStateVector: () => decodeStateVector,
+    decodeUpdate: () => decodeUpdate,
+    decodeUpdateV2: () => decodeUpdateV2,
+    diffUpdate: () => diffUpdate,
+    diffUpdateV2: () => diffUpdateV2,
+    emptySnapshot: () => emptySnapshot,
+    encodeRelativePosition: () => encodeRelativePosition,
+    encodeSnapshot: () => encodeSnapshot,
+    encodeSnapshotV2: () => encodeSnapshotV2,
+    encodeStateAsUpdate: () => encodeStateAsUpdate,
+    encodeStateAsUpdateV2: () => encodeStateAsUpdateV2,
+    encodeStateVector: () => encodeStateVector,
+    encodeStateVectorFromUpdate: () => encodeStateVectorFromUpdate,
+    encodeStateVectorFromUpdateV2: () => encodeStateVectorFromUpdateV2,
+    equalDeleteSets: () => equalDeleteSets,
+    equalSnapshots: () => equalSnapshots,
+    findIndexSS: () => findIndexSS,
+    findRootTypeKey: () => findRootTypeKey,
+    getItem: () => getItem,
+    getItemCleanEnd: () => getItemCleanEnd,
+    getItemCleanStart: () => getItemCleanStart,
+    getState: () => getState,
+    getTypeChildren: () => getTypeChildren,
+    isDeleted: () => isDeleted,
+    isParentOf: () => isParentOf,
+    iterateDeletedStructs: () => iterateDeletedStructs,
+    logType: () => logType,
+    logUpdate: () => logUpdate,
+    logUpdateV2: () => logUpdateV2,
+    mergeDeleteSets: () => mergeDeleteSets,
+    mergeUpdates: () => mergeUpdates,
+    mergeUpdatesV2: () => mergeUpdatesV2,
+    obfuscateUpdate: () => obfuscateUpdate,
+    obfuscateUpdateV2: () => obfuscateUpdateV2,
+    parseUpdateMeta: () => parseUpdateMeta,
+    parseUpdateMetaV2: () => parseUpdateMetaV2,
+    readUpdate: () => readUpdate,
+    readUpdateV2: () => readUpdateV2,
+    relativePositionToJSON: () => relativePositionToJSON,
+    snapshot: () => snapshot,
+    snapshotContainsUpdate: () => snapshotContainsUpdate,
+    transact: () => transact,
+    tryGc: () => tryGc,
+    typeListToArraySnapshot: () => typeListToArraySnapshot,
+    typeMapGetAllSnapshot: () => typeMapGetAllSnapshot,
+    typeMapGetSnapshot: () => typeMapGetSnapshot
+  });
+
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/webcrypto.js
   var subtle = crypto.subtle;
   var getRandomValues = crypto.getRandomValues.bind(crypto);
@@ -917,9 +1109,6 @@ var Y = (() => {
     /** @param {number} c */
     (c) => (c ^ uint32() & 15 >> c / 4).toString(16)
   );
-
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/time.js
-  var getUnixTime = Date.now;
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/promise.js
   var create4 = (f) => (
@@ -961,57 +1150,6 @@ var Y = (() => {
   }
   var varStorage = _localStorage;
 
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/object.js
-  var assign = Object.assign;
-  var keys = Object.keys;
-  var forEach = (obj, f) => {
-    for (const key in obj) {
-      f(obj[key], key);
-    }
-  };
-  var size = (obj) => keys(obj).length;
-  var isEmpty = (obj) => {
-    for (const _k in obj) {
-      return false;
-    }
-    return true;
-  };
-  var every = (obj, f) => {
-    for (const key in obj) {
-      if (!f(obj[key], key)) {
-        return false;
-      }
-    }
-    return true;
-  };
-  var hasProperty = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-  var equalFlat = (a, b) => a === b || size(a) === size(b) && every(a, (val, key) => (val !== void 0 || hasProperty(b, key)) && b[key] === val);
-  var freeze = Object.freeze;
-  var deepFreeze = (o) => {
-    for (const key in o) {
-      const c = o[key];
-      if (typeof c === "object" || typeof c === "function") {
-        deepFreeze(o[key]);
-      }
-    }
-    return freeze(o);
-  };
-
-  // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/function.js
-  var callAll = (fs, args2, i = 0) => {
-    try {
-      for (; i < fs.length; i++) {
-        fs[i](...args2);
-      }
-    } finally {
-      if (i < fs.length) {
-        callAll(fs, args2, i + 1);
-      }
-    }
-  };
-  var id = (a) => a;
-  var isOneOf = (value, options) => options.includes(value);
-
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/environment.js
   var isNode = typeof process !== "undefined" && process.release && /node|io\.js/.test(process.release.name) && Object.prototype.toString.call(typeof process !== "undefined" ? process : 0) === "[object process]";
   var isMac = typeof navigator !== "undefined" ? /Mac/.test(navigator.platform) : false;
@@ -1020,7 +1158,7 @@ var Y = (() => {
   var computeParams = () => {
     if (params === void 0) {
       if (isNode) {
-        params = create();
+        params = create3();
         const pargs = process.argv;
         let currParamName = null;
         for (let i = 0; i < pargs.length; i++) {
@@ -1043,7 +1181,7 @@ var Y = (() => {
           params.set(currParamName, "");
         }
       } else if (typeof location === "object") {
-        params = create();
+        params = create3();
         (location.search || "?").slice(1).split("&").forEach((kv) => {
           if (kv.length !== 0) {
             const [key, value] = kv.split("=");
@@ -1052,7 +1190,7 @@ var Y = (() => {
           }
         });
       } else {
-        params = create();
+        params = create3();
       }
     }
     return params;
@@ -1170,7 +1308,7 @@ var Y = (() => {
     }
     const strBuilder = [];
     const styles = [];
-    const currentStyle = create();
+    const currentStyle = create3();
     let logArgs = [];
     let i = 0;
     for (; i < args2.length; i++) {
@@ -1217,7 +1355,7 @@ var Y = (() => {
     args2.unshift(ORANGE);
     vconsoles.forEach((vc) => vc.print(args2));
   };
-  var vconsoles = create2();
+  var vconsoles = create();
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/iterator.js
   var createIterator = (next) => ({
@@ -1339,11 +1477,11 @@ var Y = (() => {
     sortAndMergeDeleteSet(merged);
     return merged;
   };
-  var addToDeleteSet = (ds, client, clock, length2) => {
+  var addToDeleteSet = (ds, client, clock, length3) => {
     setIfUndefined(ds.clients, client, () => (
       /** @type {Array<DeleteItem>} */
       []
-    )).push(new DeleteItem(clock, length2));
+    )).push(new DeleteItem(clock, length3));
   };
   var createDeleteSet = () => new DeleteSet();
   var createDeleteSetFromStructStore = (ss) => {
@@ -2261,7 +2399,7 @@ var Y = (() => {
     });
   };
   var readClientsStructRefs = (decoder, doc2) => {
-    const clientRefs = create();
+    const clientRefs = create3();
     const numOfStateUpdates = readVarUint(decoder.restDecoder);
     for (let i = 0; i < numOfStateUpdates; i++) {
       const numberOfStructs = readVarUint(decoder.restDecoder);
@@ -2948,7 +3086,7 @@ var Y = (() => {
   var snapshot = (doc2) => createSnapshot(createDeleteSetFromStructStore(doc2.store), getStateVector(doc2.store));
   var isVisible = (item, snapshot2) => snapshot2 === void 0 ? !item.deleted : snapshot2.sv.has(item.id.client) && (snapshot2.sv.get(item.id.client) || 0) > item.id.clock && !isDeleted(snapshot2.ds, item.id);
   var splitSnapshotAffectedStructs = (transaction, snapshot2) => {
-    const meta = setIfUndefined(transaction.meta, splitSnapshotAffectedStructs, create2);
+    const meta = setIfUndefined(transaction.meta, splitSnapshotAffectedStructs, create);
     const store = transaction.doc.store;
     if (!meta.has(snapshot2)) {
       snapshot2.sv.forEach((clock, client) => {
@@ -3158,7 +3296,7 @@ var Y = (() => {
   var addChangedTypeToTransaction = (transaction, type, parentSub) => {
     const item = type._item;
     if (item === null || item.id.clock < (transaction.beforeState.get(item.id.client) || 0) && !item.deleted) {
-      setIfUndefined(transaction.changed, type, create2).add(parentSub);
+      setIfUndefined(transaction.changed, type, create).add(parentSub);
     }
   };
   var tryToMergeWithLefts = (structs, pos) => {
@@ -4044,10 +4182,10 @@ var Y = (() => {
   };
   var createObfuscator = ({ formatting = true, subdocs = true, yxml = true } = {}) => {
     let i = 0;
-    const mapKeyCache = create();
-    const nodeNameCache = create();
-    const formattingKeyCache = create();
-    const formattingValueCache = create();
+    const mapKeyCache = create3();
+    const nodeNameCache = create3();
+    const formattingKeyCache = create3();
+    const formattingValueCache = create3();
     formattingValueCache.set(null, null);
     return (block) => {
       switch (block.constructor) {
@@ -4206,7 +4344,7 @@ var Y = (() => {
     get keys() {
       if (this._keys === null) {
         if (this.transaction.doc._transactionCleanups.length === 0) {
-          throw create3(errorComputeChanges);
+          throw create2(errorComputeChanges);
         }
         const keys2 = /* @__PURE__ */ new Map();
         const target = this.target;
@@ -4295,11 +4433,11 @@ var Y = (() => {
       let changes = this._changes;
       if (changes === null) {
         if (this.transaction.doc._transactionCleanups.length === 0) {
-          throw create3(errorComputeChanges);
+          throw create2(errorComputeChanges);
         }
         const target = this.target;
-        const added = create2();
-        const deleted = create2();
+        const added = create();
+        const deleted = create();
         const delta = [];
         changes = {
           added,
@@ -4809,7 +4947,7 @@ var Y = (() => {
     });
     packJsonContent();
   };
-  var lengthExceeded = () => create3("Length exceeded!");
+  var lengthExceeded = () => create2("Length exceeded!");
   var typeListInsertGenerics = (transaction, parent, index, content) => {
     if (index > parent._length) {
       throw lengthExceeded();
@@ -4857,12 +4995,12 @@ var Y = (() => {
     }
     return typeListInsertGenericsAfter(transaction, parent, n, content);
   };
-  var typeListDelete = (transaction, parent, index, length2) => {
-    if (length2 === 0) {
+  var typeListDelete = (transaction, parent, index, length3) => {
+    if (length3 === 0) {
       return;
     }
     const startIndex = index;
-    const startLength = length2;
+    const startLength = length3;
     const marker = findMarker(parent, index);
     let n = parent._start;
     if (marker !== null) {
@@ -4877,24 +5015,24 @@ var Y = (() => {
         index -= n.length;
       }
     }
-    while (length2 > 0 && n !== null) {
+    while (length3 > 0 && n !== null) {
       if (!n.deleted) {
-        if (length2 < n.length) {
-          getItemCleanStart(transaction, createID(n.id.client, n.id.clock + length2));
+        if (length3 < n.length) {
+          getItemCleanStart(transaction, createID(n.id.client, n.id.clock + length3));
         }
         n.delete(transaction);
-        length2 -= n.length;
+        length3 -= n.length;
       }
       n = n.right;
     }
-    if (length2 > 0) {
+    if (length3 > 0) {
       throw lengthExceeded();
     }
     if (parent._searchMarker) {
       updateMarkerChanges(
         parent._searchMarker,
         startIndex,
-        -startLength + length2
+        -startLength + length3
         /* in case we remove the above exception */
       );
     }
@@ -5134,13 +5272,13 @@ var Y = (() => {
      * @param {number} index Index at which to start deleting elements
      * @param {number} length The number of elements to remove. Defaults to 1.
      */
-    delete(index, length2 = 1) {
+    delete(index, length3 = 1) {
       if (this.doc !== null) {
         transact(this.doc, (transaction) => {
-          typeListDelete(transaction, this, index, length2);
+          typeListDelete(transaction, this, index, length3);
         });
       } else {
-        this._prelimContent.splice(index, length2);
+        this._prelimContent.splice(index, length3);
       }
     }
     /**
@@ -5631,12 +5769,12 @@ var Y = (() => {
     currPos.forward();
     insertNegatedAttributes(transaction, parent, currPos, negatedAttributes);
   };
-  var formatText = (transaction, parent, currPos, length2, attributes) => {
+  var formatText = (transaction, parent, currPos, length3, attributes) => {
     const doc2 = transaction.doc;
     const ownClientId = doc2.clientID;
     minimizeAttributeChanges(currPos, attributes);
     const negatedAttributes = insertAttributes(transaction, parent, currPos, attributes);
-    iterationLoop: while (currPos.right !== null && (length2 > 0 || negatedAttributes.size > 0 && (currPos.right.deleted || currPos.right.content.constructor === ContentFormat))) {
+    iterationLoop: while (currPos.right !== null && (length3 > 0 || negatedAttributes.size > 0 && (currPos.right.deleted || currPos.right.content.constructor === ContentFormat))) {
       if (!currPos.right.deleted) {
         switch (currPos.right.content.constructor) {
           case ContentFormat: {
@@ -5649,7 +5787,7 @@ var Y = (() => {
               if (equalAttrs(attr, value)) {
                 negatedAttributes.delete(key);
               } else {
-                if (length2 === 0) {
+                if (length3 === 0) {
                   break iterationLoop;
                 }
                 negatedAttributes.set(key, value);
@@ -5661,18 +5799,18 @@ var Y = (() => {
             break;
           }
           default:
-            if (length2 < currPos.right.length) {
-              getItemCleanStart(transaction, createID(currPos.right.id.client, currPos.right.id.clock + length2));
+            if (length3 < currPos.right.length) {
+              getItemCleanStart(transaction, createID(currPos.right.id.client, currPos.right.id.clock + length3));
             }
-            length2 -= currPos.right.length;
+            length3 -= currPos.right.length;
             break;
         }
       }
       currPos.forward();
     }
-    if (length2 > 0) {
+    if (length3 > 0) {
       let newlines = "";
-      for (; length2 > 0; length2--) {
+      for (; length3 > 0; length3--) {
         newlines += "\n";
       }
       currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), currPos.left, currPos.left && currPos.left.lastId, currPos.right, currPos.right && currPos.right.id, parent, null, new ContentString(newlines));
@@ -5683,7 +5821,7 @@ var Y = (() => {
   };
   var cleanupFormattingGap = (transaction, start, curr, startAttributes, currAttributes) => {
     let end = start;
-    const endFormats = create();
+    const endFormats = create3();
     while (end && (!end.countable || end.deleted)) {
       if (!end.deleted && end.content.constructor === ContentFormat) {
         const cf = (
@@ -5767,7 +5905,7 @@ var Y = (() => {
           type._start
         );
         let end = type._start;
-        let startAttributes = create();
+        let startAttributes = create3();
         const currentAttributes = copy(startAttributes);
         while (end) {
           if (end.deleted === false) {
@@ -5841,20 +5979,20 @@ var Y = (() => {
       }
     });
   };
-  var deleteText = (transaction, currPos, length2) => {
-    const startLength = length2;
+  var deleteText = (transaction, currPos, length3) => {
+    const startLength = length3;
     const startAttrs = copy(currPos.currentAttributes);
     const start = currPos.right;
-    while (length2 > 0 && currPos.right !== null) {
+    while (length3 > 0 && currPos.right !== null) {
       if (currPos.right.deleted === false) {
         switch (currPos.right.content.constructor) {
           case ContentType:
           case ContentEmbed:
           case ContentString:
-            if (length2 < currPos.right.length) {
-              getItemCleanStart(transaction, createID(currPos.right.id.client, currPos.right.id.clock + length2));
+            if (length3 < currPos.right.length) {
+              getItemCleanStart(transaction, createID(currPos.right.id.client, currPos.right.id.clock + length3));
             }
-            length2 -= currPos.right.length;
+            length3 -= currPos.right.length;
             currPos.right.delete(transaction);
             break;
         }
@@ -5870,7 +6008,7 @@ var Y = (() => {
       (currPos.left || currPos.right).parent
     );
     if (parent._searchMarker) {
-      updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length2);
+      updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length3);
     }
     return currPos;
   };
@@ -6391,17 +6529,17 @@ var Y = (() => {
      *
      * @public
      */
-    delete(index, length2) {
-      if (length2 === 0) {
+    delete(index, length3) {
+      if (length3 === 0) {
         return;
       }
       const y = this.doc;
       if (y !== null) {
         transact(y, (transaction) => {
-          deleteText(transaction, findPosition(transaction, this, index, true), length2);
+          deleteText(transaction, findPosition(transaction, this, index, true), length3);
         });
       } else {
-        this._pending.push(() => this.delete(index, length2));
+        this._pending.push(() => this.delete(index, length3));
       }
     }
     /**
@@ -6414,8 +6552,8 @@ var Y = (() => {
      *
      * @public
      */
-    format(index, length2, attributes) {
-      if (length2 === 0) {
+    format(index, length3, attributes) {
+      if (length3 === 0) {
         return;
       }
       const y = this.doc;
@@ -6425,10 +6563,10 @@ var Y = (() => {
           if (pos.right === null) {
             return;
           }
-          formatText(transaction, this, pos, length2, attributes);
+          formatText(transaction, this, pos, length3, attributes);
         });
       } else {
-        this._pending.push(() => this.format(index, length2, attributes));
+        this._pending.push(() => this.format(index, length3, attributes));
       }
     }
     /**
@@ -6768,7 +6906,7 @@ var Y = (() => {
         );
         const index = ref === null ? 0 : pc.findIndex((el) => el === ref) + 1;
         if (index === 0 && ref !== null) {
-          throw create3("Reference item not found");
+          throw create2("Reference item not found");
         }
         pc.splice(index, 0, ...content);
       }
@@ -6779,13 +6917,13 @@ var Y = (() => {
      * @param {number} index Index at which to start deleting elements
      * @param {number} [length=1] The number of elements to remove. Defaults to 1.
      */
-    delete(index, length2 = 1) {
+    delete(index, length3 = 1) {
       if (this.doc !== null) {
         transact(this.doc, (transaction) => {
-          typeListDelete(transaction, this, index, length2);
+          typeListDelete(transaction, this, index, length3);
         });
       } else {
-        this._prelimContent.splice(index, length2);
+        this._prelimContent.splice(index, length3);
       }
     }
     /**
@@ -7277,9 +7415,9 @@ var Y = (() => {
      * @param {ID} id
      * @param {number} length
      */
-    constructor(id2, length2) {
+    constructor(id2, length3) {
       this.id = id2;
-      this.length = length2;
+      this.length = length3;
     }
     /**
      * @type {boolean}
@@ -8770,5 +8908,220 @@ var Y = (() => {
     console.error("Yjs was already imported. This breaks constructor checks and will lead to issues! - https://github.com/yjs/yjs/issues/438");
   }
   glo[importIdentifier] = true;
-  return __toCommonJS(yjs_exports);
+
+  // node_modules/.pnpm/y-protocols@1.0.7_yjs@13.6.27/node_modules/y-protocols/awareness.js
+  var outdatedTimeout = 3e4;
+  var Awareness = class extends Observable {
+    /**
+     * @param {Y.Doc} doc
+     */
+    constructor(doc2) {
+      super();
+      this.doc = doc2;
+      this.clientID = doc2.clientID;
+      this.states = /* @__PURE__ */ new Map();
+      this.meta = /* @__PURE__ */ new Map();
+      this._checkInterval = /** @type {any} */
+      setInterval(() => {
+        const now = getUnixTime();
+        if (this.getLocalState() !== null && outdatedTimeout / 2 <= now - /** @type {{lastUpdated:number}} */
+        this.meta.get(this.clientID).lastUpdated) {
+          this.setLocalState(this.getLocalState());
+        }
+        const remove = [];
+        this.meta.forEach((meta, clientid) => {
+          if (clientid !== this.clientID && outdatedTimeout <= now - meta.lastUpdated && this.states.has(clientid)) {
+            remove.push(clientid);
+          }
+        });
+        if (remove.length > 0) {
+          removeAwarenessStates(this, remove, "timeout");
+        }
+      }, floor(outdatedTimeout / 10));
+      doc2.on("destroy", () => {
+        this.destroy();
+      });
+      this.setLocalState({});
+    }
+    destroy() {
+      this.emit("destroy", [this]);
+      this.setLocalState(null);
+      super.destroy();
+      clearInterval(this._checkInterval);
+    }
+    /**
+     * @return {Object<string,any>|null}
+     */
+    getLocalState() {
+      return this.states.get(this.clientID) || null;
+    }
+    /**
+     * @param {Object<string,any>|null} state
+     */
+    setLocalState(state) {
+      const clientID = this.clientID;
+      const currLocalMeta = this.meta.get(clientID);
+      const clock = currLocalMeta === void 0 ? 0 : currLocalMeta.clock + 1;
+      const prevState = this.states.get(clientID);
+      if (state === null) {
+        this.states.delete(clientID);
+      } else {
+        this.states.set(clientID, state);
+      }
+      this.meta.set(clientID, {
+        clock,
+        lastUpdated: getUnixTime()
+      });
+      const added = [];
+      const updated = [];
+      const filteredUpdated = [];
+      const removed = [];
+      if (state === null) {
+        removed.push(clientID);
+      } else if (prevState == null) {
+        if (state != null) {
+          added.push(clientID);
+        }
+      } else {
+        updated.push(clientID);
+        if (!equalityDeep(prevState, state)) {
+          filteredUpdated.push(clientID);
+        }
+      }
+      if (added.length > 0 || filteredUpdated.length > 0 || removed.length > 0) {
+        this.emit("change", [{ added, updated: filteredUpdated, removed }, "local"]);
+      }
+      this.emit("update", [{ added, updated, removed }, "local"]);
+    }
+    /**
+     * @param {string} field
+     * @param {any} value
+     */
+    setLocalStateField(field, value) {
+      const state = this.getLocalState();
+      if (state !== null) {
+        this.setLocalState({
+          ...state,
+          [field]: value
+        });
+      }
+    }
+    /**
+     * @return {Map<number,Object<string,any>>}
+     */
+    getStates() {
+      return this.states;
+    }
+  };
+  var removeAwarenessStates = (awareness, clients, origin) => {
+    const removed = [];
+    for (let i = 0; i < clients.length; i++) {
+      const clientID = clients[i];
+      if (awareness.states.has(clientID)) {
+        awareness.states.delete(clientID);
+        if (clientID === awareness.clientID) {
+          const curMeta = (
+            /** @type {MetaClientState} */
+            awareness.meta.get(clientID)
+          );
+          awareness.meta.set(clientID, {
+            clock: curMeta.clock + 1,
+            lastUpdated: getUnixTime()
+          });
+        }
+        removed.push(clientID);
+      }
+    }
+    if (removed.length > 0) {
+      awareness.emit("change", [{ added: [], updated: [], removed }, origin]);
+      awareness.emit("update", [{ added: [], updated: [], removed }, origin]);
+    }
+  };
+  var encodeAwarenessUpdate = (awareness, clients, states = awareness.states) => {
+    const len = clients.length;
+    const encoder = createEncoder();
+    writeVarUint(encoder, len);
+    for (let i = 0; i < len; i++) {
+      const clientID = clients[i];
+      const state = states.get(clientID) || null;
+      const clock = (
+        /** @type {MetaClientState} */
+        awareness.meta.get(clientID).clock
+      );
+      writeVarUint(encoder, clientID);
+      writeVarUint(encoder, clock);
+      writeVarString(encoder, JSON.stringify(state));
+    }
+    return toUint8Array(encoder);
+  };
+  var applyAwarenessUpdate = (awareness, update, origin) => {
+    const decoder = createDecoder(update);
+    const timestamp = getUnixTime();
+    const added = [];
+    const updated = [];
+    const filteredUpdated = [];
+    const removed = [];
+    const len = readVarUint(decoder);
+    for (let i = 0; i < len; i++) {
+      const clientID = readVarUint(decoder);
+      let clock = readVarUint(decoder);
+      const state = JSON.parse(readVarString(decoder));
+      const clientMeta = awareness.meta.get(clientID);
+      const prevState = awareness.states.get(clientID);
+      const currClock = clientMeta === void 0 ? 0 : clientMeta.clock;
+      if (currClock < clock || currClock === clock && state === null && awareness.states.has(clientID)) {
+        if (state === null) {
+          if (clientID === awareness.clientID && awareness.getLocalState() != null) {
+            clock++;
+          } else {
+            awareness.states.delete(clientID);
+          }
+        } else {
+          awareness.states.set(clientID, state);
+        }
+        awareness.meta.set(clientID, {
+          clock,
+          lastUpdated: timestamp
+        });
+        if (clientMeta === void 0 && state !== null) {
+          added.push(clientID);
+        } else if (clientMeta !== void 0 && state === null) {
+          removed.push(clientID);
+        } else if (state !== null) {
+          if (!equalityDeep(state, prevState)) {
+            filteredUpdated.push(clientID);
+          }
+          updated.push(clientID);
+        }
+      }
+    }
+    if (added.length > 0 || filteredUpdated.length > 0 || removed.length > 0) {
+      awareness.emit("change", [{
+        added,
+        updated: filteredUpdated,
+        removed
+      }, origin]);
+    }
+    if (added.length > 0 || updated.length > 0 || removed.length > 0) {
+      awareness.emit("update", [{
+        added,
+        updated,
+        removed
+      }, origin]);
+    }
+  };
+
+  // yjs-entry.js
+  var SharedEditsYjs = {
+    Y: yjs_exports,
+    Awareness,
+    encodeAwarenessUpdate,
+    applyAwarenessUpdate,
+    removeAwarenessStates
+  };
+  if (typeof window !== "undefined") {
+    window.SharedEditsYjs = SharedEditsYjs;
+    window.Y = yjs_exports;
+  }
+  return __toCommonJS(yjs_entry_exports);
 })();
