@@ -16,15 +16,6 @@ import sharedEditsProsemirrorExtension from "../lib/shared-edits-prosemirror-ext
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 
-// WeakRef to siteSettings service to avoid memory leaks while allowing
-// transformers to access current settings without stale references
-let _siteSettingsRef = null;
-
-function getSiteSettings() {
-  // Return the current siteSettings from the WeakRef, or null if GC'd
-  return _siteSettingsRef?.deref?.() ?? _siteSettingsRef;
-}
-
 function formatSharedEditActionTitle(model) {
   if (model.action !== SHARED_EDIT_ACTION) {
     return;
@@ -43,7 +34,7 @@ function formatSharedEditActionTitle(model) {
   `);
 }
 
-function initWithApi(api) {
+function initWithApi(api, siteSettings) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil";
 
@@ -57,8 +48,6 @@ function initWithApi(api) {
     "composer-force-editor-mode",
     ({ value, context }) => {
       if (context.model?.action === SHARED_EDIT_ACTION) {
-        // Get current siteSettings to avoid stale references
-        const siteSettings = getSiteSettings();
         // Use rich mode if the setting is "rich", otherwise force markdown
         if (siteSettings?.shared_edits_editor_mode === "rich") {
           return USER_OPTION_COMPOSITION_MODES.richEditor;
@@ -242,15 +231,6 @@ export default {
       return;
     }
 
-    // Store siteSettings reference for use in transformer
-    // Use WeakRef if available to allow GC, otherwise fall back to direct reference
-    // This prevents memory leaks while keeping transformers working
-    if (typeof globalThis.WeakRef !== "undefined") {
-      _siteSettingsRef = new globalThis.WeakRef(siteSettings);
-    } else {
-      _siteSettingsRef = siteSettings;
-    }
-
-    withPluginApi(initWithApi);
+    withPluginApi((api) => initWithApi(api, siteSettings));
   },
 };

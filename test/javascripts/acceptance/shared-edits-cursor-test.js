@@ -16,6 +16,20 @@ function base64ToUint8Array(str) {
   return Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
 }
 
+// Base64url decoding for URL-safe cursor data
+function base64urlToUint8Array(str) {
+  if (!str) {
+    return new Uint8Array();
+  }
+  // Convert base64url back to standard base64
+  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  // Add padding if needed
+  while (base64.length % 4) {
+    base64 += "=";
+  }
+  return base64ToUint8Array(base64);
+}
+
 acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
   let updateRequestBodies;
 
@@ -144,7 +158,7 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     await waitUntil(() => sharedEditManager.doc);
 
     const decoded = window.Y.decodeRelativePosition(
-      base64ToUint8Array(payload.cursor.start)
+      base64urlToUint8Array(payload.cursor.start)
     );
     const absolute = window.Y.createAbsolutePositionFromRelativePosition(
       decoded,

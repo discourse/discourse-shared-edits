@@ -9,6 +9,7 @@ class SharedEditRevision < ActiveRecord::Base
   MESSAGE_BUS_MAX_BACKLOG_AGE = 600
   MESSAGE_BUS_MAX_BACKLOG_SIZE = 100
   MAX_AWARENESS_BYTES = 10.kilobytes
+  MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits"
   # Default commit delay if site setting is not available
   DEFAULT_COMMIT_DELAY_SECONDS = 30
 
@@ -29,6 +30,10 @@ class SharedEditRevision < ActiveRecord::Base
       Discourse.redis.setex(key, delay * 2, "1")
       Jobs.enqueue_in(delay.seconds, :commit_shared_revision, post_id: post_id)
     end
+  end
+
+  def self.message_bus_channel(post_id)
+    "#{MESSAGE_BUS_CHANNEL_PREFIX}/#{post_id}"
   end
 
   def self.last_revision_id_for_post(post)
@@ -254,7 +259,16 @@ class SharedEditRevision < ActiveRecord::Base
   end
   private_class_method :compact_history!
 
-  def self.revise!(post_id:, user_id:, client_id:, update:, cursor: nil, awareness: nil)
+  def self.revise!(
+    post_id:,
+    user_id:,
+    client_id:,
+    update:,
+    cursor: nil,
+    awareness: nil,
+    post: nil,
+    user_name: nil
+  )
     retries = 0
 
     begin
@@ -275,19 +289,20 @@ class SharedEditRevision < ActiveRecord::Base
             version: latest.version + 1,
           )
 
-        post = Post.find(post_id)
+        post ||= Post.find(post_id)
+        user_name ||= User.find(user_id).username
         message = {
           version: revision.version,
           update: update,
           client_id: client_id,
           user_id: user_id,
-          user_name: User.find(user_id).username,
+          user_name: user_name,
         }
         message[:cursor] = cursor if cursor.present?
         message[:awareness] = awareness if awareness.present?
         # Limit backlog to prevent unbounded Redis growth
         post.publish_message!(
-          "/shared_edits/#{post.id}",
+          message_bus_channel(post.id),
           message,
           max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
           max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,

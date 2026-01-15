@@ -67,7 +67,7 @@ module DiscourseSharedEdits
       def health_check(post_id)
         report = { post_id: post_id, healthy: true, errors: [], warnings: [], state: nil }
 
-        revisions = SharedEditRevision.where(post_id: post_id).order(:version)
+        revisions = SharedEditRevision.where(post_id: post_id).order(:version).to_a
 
         if revisions.empty?
           report[:state] = :not_initialized
@@ -75,7 +75,7 @@ module DiscourseSharedEdits
         end
 
         report[:state] = :initialized
-        report[:revision_count] = revisions.count
+        report[:revision_count] = revisions.length
         report[:version_range] = [revisions.first.version, revisions.last.version]
 
         expected_version = revisions.first.version

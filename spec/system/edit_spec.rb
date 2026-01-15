@@ -4,8 +4,8 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
   fab!(:admin)
   fab!(:post) { Fabricate(:post, user: admin, raw: "lorem ipsum\n") }
   fab!(:remote_user, :user)
-  let(:composer) { PageObjects::Components::Composer.new }
-  let(:topic_page) { PageObjects::Pages::Topic.new }
+  let(:composer) { PageObjects::Components::SharedEditsComposer.new }
+  let(:topic_page) { PageObjects::Pages::SharedEditsTopic.new }
 
   before { sign_in(admin) }
 

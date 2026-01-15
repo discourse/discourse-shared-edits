@@ -1,4 +1,4 @@
-import { debounce, throttle } from "@ember/runloop";
+import { cancel, debounce, throttle } from "@ember/runloop";
 import Service, { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
@@ -13,6 +13,7 @@ import {
 const THROTTLE_SAVE = 350;
 const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
 const SPELLCHECK_SUSPEND_DURATION_MS = 1000;
+const MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits";
 let yjsPromise;
 let yjsProsemirrorPromise;
 
@@ -52,6 +53,10 @@ export function getPM() {
     return null;
   }
   return window[PM_NAMESPACE] || null;
+}
+
+function messageBusChannel(postId) {
+  return `${MESSAGE_BUS_CHANNEL_PREFIX}/${postId}`;
 }
 
 // Store reference to convertToMarkdown for proper serialization of rich content
@@ -164,22 +169,45 @@ function uint8ArrayToBase64(uint8) {
   return btoa(binary);
 }
 
-function encodeRelativePositionToBase64(relativePosition) {
+// Base64url encoding/decoding for URL-safe transmission
+// Uses - instead of + and _ instead of / to avoid URL encoding issues
+function uint8ArrayToBase64url(uint8) {
+  return uint8ArrayToBase64(uint8)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function base64urlToUint8Array(str) {
+  if (!str) {
+    return new Uint8Array();
+  }
+
+  // Convert base64url back to standard base64
+  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  // Add padding if needed
+  while (base64.length % 4) {
+    base64 += "=";
+  }
+  return base64ToUint8Array(base64);
+}
+
+function encodeRelativePositionToBase64url(relativePosition) {
   if (!relativePosition || !window.Y || !window.Y.encodeRelativePosition) {
     return null;
   }
 
   const encoded = window.Y.encodeRelativePosition(relativePosition);
-  return uint8ArrayToBase64(encoded);
+  return uint8ArrayToBase64url(encoded);
 }
 
-function decodeRelativePositionFromBase64(base64) {
-  if (!base64 || !window.Y || !window.Y.decodeRelativePosition) {
+function decodeRelativePositionFromBase64url(base64url) {
+  if (!base64url || !window.Y || !window.Y.decodeRelativePosition) {
     return null;
   }
 
   try {
-    const uint8 = base64ToUint8Array(base64);
+    const uint8 = base64urlToUint8Array(base64url);
     return window.Y.decodeRelativePosition(uint8);
   } catch {
     return null;
@@ -310,6 +338,8 @@ export default class SharedEditManager extends Service {
   #spellcheckRestoreValue = null;
   #spellcheckTextarea = null;
   #syncingTextFromComposer = false;
+  #sendUpdatesThrottleId = null;
+  #syncYTextFromXmlFragmentDebounceId = null;
   #onRemoteMessage = (message) => {
     if (message.action === "resync") {
       this.#handleResync();
@@ -463,6 +493,14 @@ export default class SharedEditManager extends Service {
 
   willDestroy() {
     this.#resetSpellcheckSuppression();
+    if (this.#sendUpdatesThrottleId) {
+      cancel(this.#sendUpdatesThrottleId);
+      this.#sendUpdatesThrottleId = null;
+    }
+    if (this.#syncYTextFromXmlFragmentDebounceId) {
+      cancel(this.#syncYTextFromXmlFragmentDebounceId);
+      this.#syncYTextFromXmlFragmentDebounceId = null;
+    }
     super.willDestroy(...arguments);
   }
 
@@ -738,7 +776,7 @@ export default class SharedEditManager extends Service {
       await this.#flushPendingUpdates();
 
       this.#detachComposerObserver();
-      this.messageBus.unsubscribe(`/shared_edits/${postId}`);
+      this.messageBus.unsubscribe(messageBusChannel(postId));
       this.#teardownDoc();
       this.pendingUpdates = [];
       this.currentPostId = null;
@@ -867,7 +905,11 @@ export default class SharedEditManager extends Service {
     // The server extracts text from Y.Text("post"), so we need to keep it updated.
     // Debounce to avoid heavy work on every keystroke.
     this.xmlFragmentObserver = () => {
-      debounce(this, this.#syncYTextFromXmlFragment, 500);
+      this.#syncYTextFromXmlFragmentDebounceId = debounce(
+        this,
+        this.#syncYTextFromXmlFragment,
+        500
+      );
     };
     this.xmlFragment.observeDeep(this.xmlFragmentObserver);
   }
@@ -950,7 +992,7 @@ export default class SharedEditManager extends Service {
     this.#detachComposerObserver();
 
     if (this.#messageBusPostId) {
-      this.messageBus.unsubscribe(`/shared_edits/${this.#messageBusPostId}`);
+      this.messageBus.unsubscribe(messageBusChannel(this.#messageBusPostId));
     }
 
     // Markdown mode cleanup
@@ -1091,11 +1133,11 @@ export default class SharedEditManager extends Service {
     }
 
     if (this.#messageBusPostId) {
-      this.messageBus.unsubscribe(`/shared_edits/${this.#messageBusPostId}`);
+      this.messageBus.unsubscribe(messageBusChannel(this.#messageBusPostId));
     }
 
     this.messageBus.subscribe(
-      `/shared_edits/${postId}`,
+      messageBusChannel(postId),
       this.#onRemoteMessage,
       lastId
     );
@@ -1351,12 +1393,12 @@ export default class SharedEditManager extends Service {
     }
 
     const cursor = {};
-    const start = encodeRelativePositionToBase64(selection.start);
+    const start = encodeRelativePositionToBase64url(selection.start);
     if (start) {
       cursor.start = start;
     }
 
-    const end = encodeRelativePositionToBase64(selection.end);
+    const end = encodeRelativePositionToBase64url(selection.end);
     if (end) {
       cursor.end = end;
     }
@@ -1372,14 +1414,14 @@ export default class SharedEditManager extends Service {
     const cursor = {};
 
     if (cursorPayload.start) {
-      const start = decodeRelativePositionFromBase64(cursorPayload.start);
+      const start = decodeRelativePositionFromBase64url(cursorPayload.start);
       if (start) {
         cursor.start = start;
       }
     }
 
     if (cursorPayload.end) {
-      const end = decodeRelativePositionFromBase64(cursorPayload.end);
+      const end = decodeRelativePositionFromBase64url(cursorPayload.end);
       if (end) {
         cursor.end = end;
       }
@@ -1461,7 +1503,12 @@ export default class SharedEditManager extends Service {
     // Use throttle instead of debounce so updates sync periodically during
     // continuous typing, not just when typing stops. With immediate=true,
     // the first call executes immediately, then at most once per THROTTLE_SAVE ms.
-    throttle(this, this.#sendUpdates, THROTTLE_SAVE, false);
+    this.#sendUpdatesThrottleId = throttle(
+      this,
+      this.#sendUpdates,
+      THROTTLE_SAVE,
+      false
+    );
   }
 
   async #flushPendingUpdates() {
@@ -1496,6 +1543,9 @@ export default class SharedEditManager extends Service {
   }
 
   async #sendUpdates(immediate = false) {
+    if (this.isDestroying || this.isDestroyed) {
+      return;
+    }
     const postId = this.currentPostId || this.#postId;
 
     if (this.isRichMode && this.doc) {
