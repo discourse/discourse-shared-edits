@@ -26,11 +26,8 @@ module ::DiscourseSharedEdits
       guardian.ensure_can_edit!(@post)
 
       revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
-
-      # If not initialized, we should 404 as expected by tests and original logic
       raise Discourse::NotFound if revision.nil?
 
-      # Capture MessageBus ID as close as possible to the revision state
       message_bus_last_id = MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
 
       begin
@@ -48,7 +45,6 @@ module ::DiscourseSharedEdits
                  message_bus_last_id: message_bus_last_id,
                }
       rescue StandardError => e
-        # If state is corrupted, attempt recovery
         Rails.logger.warn(
           "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
         )
@@ -84,6 +80,8 @@ module ::DiscourseSharedEdits
 
       guardian.ensure_can_edit!(@post)
 
+      RateLimiter.new(current_user, "shared-edit-revise-#{@post.id}", 60, 1.minute).performed!
+
       awareness = params[:awareness]
       if awareness.present?
         validation = StateValidator.validate_awareness(awareness)
@@ -93,11 +91,8 @@ module ::DiscourseSharedEdits
         end
       end
 
-      # Rich mode may send awareness-only updates (no document changes)
-      # In that case, just broadcast awareness and return success
       if params[:update].blank?
         if awareness.present?
-          # Broadcast awareness update to other clients
           @post.publish_message!(
             SharedEditRevision.message_bus_channel(@post.id),
             {
@@ -146,7 +141,6 @@ module ::DiscourseSharedEdits
         "[SharedEdits] State corruption in revise for post #{params[:post_id]}: #{e.message}",
       )
 
-      # Attempt automatic recovery
       recovery = StateValidator.recover_from_post_raw(params[:post_id].to_i)
       if recovery[:success]
         render json: {
@@ -178,7 +172,6 @@ module ::DiscourseSharedEdits
       result = StateValidator.recover_from_post_raw(@post.id, force: params[:force] == "true")
 
       if result[:success]
-        # Notify connected clients to resync
         @post.publish_message!(
           SharedEditRevision.message_bus_channel(@post.id),
           { action: "resync", version: result[:new_version] },
@@ -196,7 +189,6 @@ module ::DiscourseSharedEdits
 
       new_version = SharedEditRevision.reset_history!(@post.id)
 
-      # Notify connected clients to resync
       @post.publish_message!(
         SharedEditRevision.message_bus_channel(@post.id),
         { action: "resync", version: new_version },
@@ -218,7 +210,6 @@ module ::DiscourseSharedEdits
     end
 
     def ensure_shared_edits_enabled_for_post
-      # Only allowed if shared edits are enabled for this post
       unless @post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
         raise Discourse::NotFound
       end

@@ -22,7 +22,6 @@ export default class CursorOverlay {
       passive: true,
     });
 
-    // Observe resize to update container dimensions
     this.resizeObserver = new ResizeObserver(() => {
       this.updateContainerPosition();
       this.refresh();
@@ -61,7 +60,6 @@ export default class CursorOverlay {
     const Y = window.Y;
     let cursor = this.cursors.get(clientId);
 
-    // Handle user change for same client (rare but possible)
     if (cursor && cursor.user.username !== origin.user_name) {
       cursor.element.remove();
       this.cursors.delete(clientId);
@@ -117,7 +115,6 @@ export default class CursorOverlay {
   }
 
   calculateCursorPosition(cursor, index) {
-    // Only show if active typist (typed within last 5 seconds)
     const typist = this.activeTypists.get(cursor.clientId);
     const isActive = typist && Date.now() - typist.lastTyped < 5000;
 
@@ -126,14 +123,12 @@ export default class CursorOverlay {
       return;
     }
 
-    // Calculate absolute coordinates (relative to content start)
     const viewCoords = this.getViewCoords(index);
     if (viewCoords) {
       cursor.absoluteTop = viewCoords.top;
       cursor.absoluteLeft = viewCoords.left;
       cursor.height = viewCoords.height;
 
-      // Check if on first line (approximate check using a safe threshold, e.g., < 1.5em)
       const isFirstLine = viewCoords.top < (viewCoords.height || 20) * 1.2;
       if (isFirstLine) {
         cursor.label.classList.add("shared-edits-cursor__label--bottom");

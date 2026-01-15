@@ -2,6 +2,7 @@
 
 RSpec.describe DiscourseSharedEdits::RevisionController do
   fab!(:user)
+  fab!(:tl4_user) { Fabricate(:user, trust_level: TrustLevel[4]) }
   fab!(:post1) { Fabricate(:post, user: user, raw: "Hello World, testing shared edits") }
   fab!(:admin)
 
@@ -354,6 +355,76 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           }
 
       expect(response.status).to eq(403)
+    end
+
+    describe "rate limiting" do
+      # Use TL4 user for rate limiting tests since admins/mods bypass rate limits
+      # TL4 users can edit others' posts but don't bypass rate limiting
+      before { sign_in tl4_user }
+
+      it "allows requests within the rate limit" do
+        RateLimiter.enable
+
+        5.times do
+          latest_state = latest_state_for(post1)
+          new_text = "Edit #{SecureRandom.hex(4)}"
+          put "/shared_edits/p/#{post1.id}",
+              params: {
+                client_id: "abc",
+                update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+              }
+          expect(response.status).to eq(200)
+        end
+      ensure
+        RateLimiter.disable
+      end
+
+      it "returns 429 when rate limit is exceeded" do
+        RateLimiter.enable
+
+        # Exhaust the rate limit (60 per minute)
+        61.times do |i|
+          latest_state = latest_state_for(post1)
+          new_text = "Edit #{i}"
+          put "/shared_edits/p/#{post1.id}",
+              params: {
+                client_id: "abc",
+                update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+              }
+        end
+
+        expect(response.status).to eq(429)
+        expect(response.parsed_body["extras"]["wait_seconds"]).to be_present
+      ensure
+        RateLimiter.disable
+      end
+
+      it "rate limits per post independently" do
+        RateLimiter.enable
+
+        post2 = Fabricate(:post, user: tl4_user)
+        SharedEditRevision.toggle_shared_edits!(post2.id, true)
+
+        # Make requests to post1
+        latest_state = latest_state_for(post1)
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Edit post1"),
+            }
+        expect(response.status).to eq(200)
+
+        # Make requests to post2 - should not be affected by post1's rate limit
+        latest_state2 = SharedEditRevision.where(post_id: post2.id).order("version desc").first.raw
+        put "/shared_edits/p/#{post2.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state2, "Edit post2"),
+            }
+        expect(response.status).to eq(200)
+      ensure
+        RateLimiter.disable
+      end
     end
   end
 

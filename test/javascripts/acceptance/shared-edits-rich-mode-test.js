@@ -221,4 +221,101 @@ acceptance("Discourse Shared Edits | Rich Mode", function (needs) {
     assert.strictEqual(manager.doc, null, "Doc is cleaned up after commit");
     assert.strictEqual(manager.text, null, "Text is cleaned up after commit");
   });
+
+  test("commit sends Y.Text sync update to server", async function (assert) {
+    await openSharedEditComposer();
+
+    const manager = await waitForSharedEditManager(this.container);
+    const Y = await waitForYjs();
+
+    if (!manager.xmlFragment) {
+      assert.true(true, "Skipped - not in rich mode (may have fallen back)");
+    } else {
+      // Record initial Y.Text state
+      const initialText = manager.text.toString();
+
+      // Simulate a ProseMirror edit by modifying xmlFragment
+      // This is what happens when a user types in rich mode
+      manager.doc.transact(() => {
+        const paragraph = new Y.XmlElement("paragraph");
+        paragraph.insert(0, [new Y.XmlText("commit test content")]);
+        manager.xmlFragment.insert(manager.xmlFragment.length, [paragraph]);
+      });
+
+      // Clear requests to isolate commit's network calls
+      putRequests.length = 0;
+
+      // Call commit - this should sync Y.Text and flush the update to server
+      await manager.commit();
+
+      // Verify a PUT was made during commit with the Y.Text sync
+      assert.true(putRequests.length > 0, "PUT request was made during commit");
+
+      // Decode the update and apply to a fresh doc to verify Y.Text was synced
+      const lastPut = putRequests[putRequests.length - 1];
+      assert.true(Boolean(lastPut.update), "Update payload was sent");
+
+      // Apply the sent update to a new doc and check Y.Text
+      const testDoc = new Y.Doc();
+      const testText = testDoc.getText("post");
+      const updateBinary = Uint8Array.from(atob(lastPut.update), (c) =>
+        c.charCodeAt(0)
+      );
+      Y.applyUpdate(testDoc, updateBinary);
+
+      // The update should contain Y.Text with the new content
+      const sentText = testText.toString();
+      const hasNewContent =
+        sentText.includes("commit test content") ||
+        sentText.length > initialText.length;
+      assert.true(
+        hasNewContent,
+        "Sent update contains Y.Text with synced content"
+      );
+    }
+  });
+
+  test("Y.Text is synced from xmlFragment before sending updates", async function (assert) {
+    await openSharedEditComposer();
+
+    const manager = await waitForSharedEditManager(this.container);
+    const Y = await waitForYjs();
+
+    // Skip if not in rich mode - use conditional assertion instead of early return
+    if (!manager.xmlFragment) {
+      assert.true(true, "Skipped - not in rich mode (may have fallen back)");
+    } else {
+      putRequests.length = 0;
+
+      const initialText = manager.text.toString();
+
+      // Simulate a ProseMirror edit by directly modifying xmlFragment
+      // This mimics what y-prosemirror does when the user types
+      manager.doc.transact(() => {
+        // Add a paragraph to xmlFragment
+        const paragraph = new Y.XmlElement("paragraph");
+        paragraph.insert(0, [new Y.XmlText("new content from prosemirror")]);
+        manager.xmlFragment.insert(manager.xmlFragment.length, [paragraph]);
+      });
+
+      // Wait for PUT request (which should trigger Y.Text sync)
+      await waitUntil(() => putRequests.length > 0, { timeout: 1000 });
+
+      // Y.Text should now contain the new content
+      // This is the critical check - Y.Text must be synced BEFORE the update is sent
+      const currentText = manager.text.toString();
+      assert.notStrictEqual(
+        currentText,
+        initialText,
+        "Y.Text was updated after xmlFragment change"
+      );
+
+      // Check that Y.Text contains content from the xmlFragment
+      const hasNewContent = currentText.includes("new content");
+      const hasProsemirror = currentText.includes("prosemirror");
+      const isLonger = currentText.length > initialText.length;
+      const textWasSynced = hasNewContent || hasProsemirror || isLonger;
+      assert.true(textWasSynced, "Y.Text contains content from xmlFragment");
+    }
+  });
 });

@@ -168,8 +168,6 @@ module DiscourseSharedEdits
 
         result = DiscourseSharedEdits::Yjs.apply_update(current_state, update)
 
-        # Validate the resulting state to catch any corruption that Yjs might not throw for
-        # This provides an explicit safety check beyond what Yjs.apply_update validates
         state_validation = validate_state(result[:state])
         unless state_validation[:valid]
           Rails.logger.error(

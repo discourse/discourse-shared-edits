@@ -25,26 +25,21 @@ module DiscourseSharedEdits
           var module = { exports: {} };
           var exports = module.exports;
 
-          // Robust window stub for browser-targeted bundles
           if (typeof window === 'undefined') {
             global.window = global;
           }
 
-          // Minimal stubs for Prosemirror globals to allow the bundle to load
-          // without pulling in the full Prosemirror environment which is not needed
-          // for the core Yjs operations performed on the server.
           const pmGlobals = [
-            'pmState', 'pmView', 'pmModel', 'pmTransform', 
+            'pmState', 'pmView', 'pmModel', 'pmTransform',
             'pmCommands', 'pmHistory', 'pmInputrules', 'pmKeymap'
           ];
-          
+
           pmGlobals.forEach(pkg => {
             if (!global.window[pkg]) {
               global.window[pkg] = {};
             }
           });
 
-          // Ensure PluginKey stub exists as some Yjs/Prosemirror integrations expect it
           if (typeof global.window.pmState.PluginKey === 'undefined') {
             global.window.pmState.PluginKey = function(name) {
               this.key = name;
@@ -66,7 +61,6 @@ module DiscourseSharedEdits
             };
           }
 
-          // Minimal timer stubs for yjs internal house-keeping
           if (typeof setTimeout === 'undefined') {
             global.setTimeout = function(fn, delay) { return 0; };
             global.clearTimeout = function(id) {};
@@ -79,9 +73,8 @@ module DiscourseSharedEdits
         ctx.eval(File.read(yjs_path))
 
         ctx.eval(<<~JS)
-          // Always prefer the namespaced Y from our SharedEditsYjs bundle
           const YRef = (typeof SharedEditsYjs !== 'undefined' && SharedEditsYjs.Y) ? SharedEditsYjs.Y : global.Y;
-          
+
           if (!YRef) {
             throw new Error("Yjs not found in bundled context");
           }

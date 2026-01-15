@@ -42,13 +42,10 @@ function initWithApi(api, siteSettings) {
     actionTitle: formatSharedEditActionTitle,
   });
 
-  // Force editor mode based on shared_edits_editor_mode setting
-  // When in shared edit mode, use the configured editor mode (markdown or rich)
   api.registerValueTransformer(
     "composer-force-editor-mode",
     ({ value, context }) => {
       if (context.model?.action === SHARED_EDIT_ACTION) {
-        // Use rich mode if the setting is "rich", otherwise force markdown
         if (siteSettings?.shared_edits_editor_mode === "rich") {
           return USER_OPTION_COMPOSITION_MODES.richEditor;
         }
@@ -58,8 +55,6 @@ function initWithApi(api, siteSettings) {
     }
   );
 
-  // Register ProseMirror extension for rich text collaborative editing
-  // This adds y-prosemirror plugins when Yjs state is available
   api.registerRichEditorExtension(sharedEditsProsemirrorExtension);
 
   customizePostMenu(api);
@@ -219,7 +214,6 @@ function customizePostMenu(api) {
     }
   );
 
-  // register the property as tracked to ensure the button is correctly updated
   api.addTrackedPostProperties("shared_edits_enabled");
 }
 

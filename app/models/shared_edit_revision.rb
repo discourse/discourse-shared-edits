@@ -10,7 +10,6 @@ class SharedEditRevision < ActiveRecord::Base
   MESSAGE_BUS_MAX_BACKLOG_SIZE = 100
   MAX_AWARENESS_BYTES = 10.kilobytes
   MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits"
-  # Default commit delay if site setting is not available
   DEFAULT_COMMIT_DELAY_SECONDS = 30
 
   def self.commit_delay_seconds
@@ -76,7 +75,6 @@ class SharedEditRevision < ActiveRecord::Base
 
     return if latest.nil? || latest.raw.nil?
 
-    # Validate state before attempting to extract text
     validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
     unless validation[:valid]
       Rails.logger.warn(
@@ -208,8 +206,6 @@ class SharedEditRevision < ActiveRecord::Base
 
     return if latest.nil?
 
-    # Validate the latest state before compaction - if it's invalid, don't compact
-    # as we may need older revisions for recovery
     validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
     unless validation[:valid]
       Rails.logger.warn(
@@ -218,8 +214,6 @@ class SharedEditRevision < ActiveRecord::Base
       return
     end
 
-    # Keep only a few full snapshots, null out others to save space
-    # Use a Set to ensure uniqueness and prevent duplicate IDs
     keep_raw_ids = Set.new([latest.id])
     last_committed =
       SharedEditRevision
@@ -229,21 +223,18 @@ class SharedEditRevision < ActiveRecord::Base
         .first
     keep_raw_ids << last_committed.id if last_committed
 
-    # Null out raw for everything else we are keeping
     SharedEditRevision
       .where(post_id: post_id)
       .where.not(id: keep_raw_ids.to_a)
       .where.not(raw: nil)
       .update_all(raw: nil)
 
-    # Delete very old history
     SharedEditRevision
       .where(post_id: post_id)
       .where("updated_at < ?", MAX_HISTORY_AGE.ago)
       .where.not(id: keep_raw_ids.to_a)
       .delete_all
 
-    # Also enforce count limit, preserving the ones we need for recovery
     keep_ids =
       Set.new(
         SharedEditRevision
@@ -253,7 +244,6 @@ class SharedEditRevision < ActiveRecord::Base
           .pluck(:id),
       )
 
-    # Merge the two sets to get all IDs we want to keep
     all_keep_ids = (keep_ids + keep_raw_ids).to_a
     SharedEditRevision.where(post_id: post_id).where.not(id: all_keep_ids).delete_all
   end
@@ -300,7 +290,6 @@ class SharedEditRevision < ActiveRecord::Base
         }
         message[:cursor] = cursor if cursor.present?
         message[:awareness] = awareness if awareness.present?
-        # Limit backlog to prevent unbounded Redis growth
         post.publish_message!(
           message_bus_channel(post.id),
           message,
