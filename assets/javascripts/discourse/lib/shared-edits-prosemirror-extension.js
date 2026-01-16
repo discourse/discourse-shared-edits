@@ -52,6 +52,14 @@ export function clearSharedEditYjsState() {
   clearRichModeSerializers();
 }
 
+// Test support: reset module state between tests
+// Note: We intentionally do NOT reset stateIdCounter. It must be ever-increasing
+// to ensure isStillValid() checks work correctly when async operations from a
+// previous test are still in flight when the next test starts.
+export function resetProsemirrorExtensionState() {
+  sharedEditYjsState = null;
+}
+
 export function getSharedEditYjsState() {
   return sharedEditYjsState;
 }
@@ -163,12 +171,23 @@ const sharedEditsProsemirrorExtension = {
                 );
               }
 
-              const syncPlugin = SharedEditsYjs.ySyncPlugin(xmlFragment);
-              const cursorBuilder = createCursorBuilder(view.dom);
-              const cursorPlugin = SharedEditsYjs.yCursorPlugin(awareness, {
-                cursorBuilder,
-              });
-              const undoPlugin = SharedEditsYjs.yUndoPlugin();
+              let syncPlugin, cursorPlugin, undoPlugin;
+              try {
+                syncPlugin = SharedEditsYjs.ySyncPlugin(xmlFragment);
+                const cursorBuilder = createCursorBuilder(view.dom);
+                cursorPlugin = SharedEditsYjs.yCursorPlugin(awareness, {
+                  cursorBuilder,
+                });
+                undoPlugin = SharedEditsYjs.yUndoPlugin();
+              } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error(
+                  "[SharedEdits] Error creating y-prosemirror plugins:",
+                  e
+                );
+                reportError(e);
+                return;
+              }
 
               const remainingPlugins = view.state.plugins.filter(
                 (plugin) => plugin !== loaderPlugin
@@ -177,16 +196,22 @@ const sharedEditsProsemirrorExtension = {
               currentState.configured = true;
               setProsemirrorViewGetter(() => view);
 
-              view.updateState(
-                view.state.reconfigure({
-                  plugins: [
-                    syncPlugin,
-                    cursorPlugin,
-                    undoPlugin,
-                    ...remainingPlugins,
-                  ],
-                })
-              );
+              try {
+                view.updateState(
+                  view.state.reconfigure({
+                    plugins: [
+                      syncPlugin,
+                      cursorPlugin,
+                      undoPlugin,
+                      ...remainingPlugins,
+                    ],
+                  })
+                );
+              } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error("[SharedEdits] Error updating view state:", e);
+                reportError(e);
+              }
             })
             .catch((error) => {
               reportError(error);

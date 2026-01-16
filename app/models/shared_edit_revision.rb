@@ -93,6 +93,15 @@ class SharedEditRevision < ActiveRecord::Base
     end
 
     post = Post.find(post_id)
+
+    # Normalize both texts the same way PostRevisor does to avoid
+    # creating spurious revisions when content is effectively unchanged
+    normalize = ->(text) { text.present? ? TextCleaner.normalize_whitespaces(text).rstrip : "" }
+    if normalize.call(raw) == normalize.call(post.raw)
+      compact_history!(post_id)
+      return raw
+    end
+
     revisor = PostRevisor.new(post)
     opts = {
       bypass_rate_limiter: true,

@@ -98,6 +98,15 @@ export function getMarkdownFromView() {
   }
 }
 
+// Test support: reset module state between tests
+// Note: We don't reset yjsPromise/yjsProsemirrorPromise because the Yjs
+// library is a singleton that persists for the browser session. Resetting
+// these would cause issues if code still holds references to Y objects.
+export function resetYjsModuleState() {
+  clearRichModeSerializers();
+  clearPM();
+}
+
 // Yjs loading functions
 
 export function triggerYjsLoad() {
@@ -229,7 +238,7 @@ export default class YjsDocument {
     });
   }
 
-  async #setupRichDoc(state, { onDocUpdate, onAwarenessUpdate } = {}) {
+  async #setupRichDoc(state, { onDocUpdate } = {}) {
     await ensureYjsLoaded();
 
     const SharedEditsYjs = window.SharedEditsYjs;
@@ -264,9 +273,8 @@ export default class YjsDocument {
       this.doc.on("update", this.#onRichDocUpdate);
     }
 
-    if (onAwarenessUpdate) {
-      this.awareness.on("update", onAwarenessUpdate);
-    }
+    // Note: Awareness handler is registered separately via RichModeSync.setupAwarenessHandler
+    // to ensure proper cleanup. Don't register it here to avoid double registration.
 
     return {
       xmlFragment: this.xmlFragment,

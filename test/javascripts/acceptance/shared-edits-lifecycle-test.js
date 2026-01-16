@@ -3,9 +3,7 @@ import { test } from "qunit";
 import { parsePostData } from "discourse/tests/helpers/create-pretender";
 import { acceptance } from "discourse/tests/helpers/qunit-helpers";
 import {
-  createYjsState,
   openSharedEditComposer,
-  uint8ArrayToBase64,
   waitForSharedEditManager,
   waitForYjs,
 } from "../helpers/shared-edits-helpers";
@@ -223,22 +221,18 @@ acceptance("Discourse Shared Edits | Lifecycle with State", function (needs) {
       })
     );
 
-    server.get("/shared_edits/p/:id", async () => {
-      // Wait for Yjs to be available (it may be loaded by another test)
-      await waitUntil(() => window.Y, { timeout: 5000 });
-      const Y = window.Y;
+    // Pre-generated Yjs state for "content from server state"
+    // Generated via: DiscourseSharedEdits::Yjs.state_from_text('content from server state')[:state]
+    const serverState = "AQGcAQAEAQRwb3N0GWNvbnRlbnQgZnJvbSBzZXJ2ZXIgc3RhdGUA";
 
-      // Create a Yjs state with different content
-      const state = createYjsState(Y, "content from server state");
-      const base64State = uint8ArrayToBase64(state);
-
-      return helper.response({
-        state: base64State,
+    server.get("/shared_edits/p/:id", () =>
+      helper.response({
+        state: serverState,
         raw: "initial post content",
         version: 2,
         message_bus_last_id: 5,
-      });
-    });
+      })
+    );
 
     server.put("/shared_edits/p/:id", () => helper.response({ success: "OK" }));
 

@@ -46,6 +46,11 @@ export default {
 
             async close() {
               const wasSharedEdit = this.model?.action === SHARED_EDIT_ACTION;
+              // Suppress composer observer during close to prevent Y.Text from being
+              // wiped when model.reply is cleared
+              if (wasSharedEdit) {
+                this.sharedEditManager.suppressComposerChange = true;
+              }
               const result = await super.close(...arguments);
               if (wasSharedEdit) {
                 await this.sharedEditManager.commit();

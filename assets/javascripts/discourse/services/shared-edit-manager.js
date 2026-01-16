@@ -124,24 +124,41 @@ export default class SharedEditManager extends Service {
     );
   };
 
-  #handleAwarenessUpdate = ({ added, updated, removed }, origin) => {
-    if (
-      origin === "sync" ||
-      !this.#richModeSync ||
-      !this.#yjsDocument?.awareness
-    ) {
-      return;
-    }
-
-    const clientIds = [...added, ...updated, ...removed];
-    if (clientIds.length > 0) {
-      const update = this.#richModeSync.encodeAwarenessUpdate(
-        this.#yjsDocument.awareness,
-        clientIds
-      );
-      if (update) {
-        this.#networkManager?.queueAwarenessUpdate(update);
+  #handleAwarenessUpdate = (changes, origin) => {
+    // Wrap in try-catch to prevent errors during teardown from propagating
+    // as global errors. During cleanup, the awareness may emit events with
+    // malformed data which we should silently ignore.
+    try {
+      if (
+        origin === "sync" ||
+        !this.#richModeSync ||
+        !this.#yjsDocument?.awareness
+      ) {
+        return;
       }
+
+      // Guard against null/undefined changes object
+      if (!changes || typeof changes !== "object") {
+        return;
+      }
+
+      const { added, updated, removed } = changes;
+      const clientIds = [
+        ...(added || []),
+        ...(updated || []),
+        ...(removed || []),
+      ];
+      if (clientIds.length > 0) {
+        const update = this.#richModeSync.encodeAwarenessUpdate(
+          this.#yjsDocument.awareness,
+          clientIds
+        );
+        if (update) {
+          this.#networkManager?.queueAwarenessUpdate(update);
+        }
+      }
+    } catch {
+      // Silently ignore errors during teardown/cleanup
     }
   };
 
@@ -464,9 +481,8 @@ export default class SharedEditManager extends Service {
       undoOrigin: this,
     };
 
-    if (this.isRichMode) {
-      callbacks.onAwarenessUpdate = this.#handleAwarenessUpdate;
-    }
+    // Note: Awareness handler is registered via setupAwarenessHandler below
+    // to ensure proper cleanup (single registration point).
 
     await this.#yjsDocument.setup(state, raw, callbacks);
 
@@ -532,6 +548,15 @@ export default class SharedEditManager extends Service {
     this.pendingComposerReply = null;
     this.#composerReady = false;
     this.#richModeFailed = false;
+  }
+
+  // Test support: force cleanup of all state without committing
+  // Use this in test teardown to prevent state leakage between tests
+  resetForTests() {
+    if (this.currentPostId) {
+      this.#networkManager?.unsubscribe(this.currentPostId);
+    }
+    this.#cleanup();
   }
 
   async #sendUpdates() {

@@ -42,6 +42,9 @@ export default class CursorOverlay {
 
   refresh() {
     const Y = window.Y;
+    if (!Y || !Y.createAbsolutePositionFromRelativePosition) {
+      return;
+    }
     this.cursors.forEach((cursor) => {
       if (cursor.relativePosition && cursor.doc) {
         const absolutePosition = Y.createAbsolutePositionFromRelativePosition(
@@ -58,6 +61,9 @@ export default class CursorOverlay {
 
   updateCursor(clientId, origin, relativePosition, doc) {
     const Y = window.Y;
+    if (!Y || !Y.createAbsolutePositionFromRelativePosition) {
+      return;
+    }
     let cursor = this.cursors.get(clientId);
 
     if (cursor && cursor.user.username !== origin.user_name) {

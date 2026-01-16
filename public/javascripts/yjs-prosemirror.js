@@ -345,6 +345,10 @@ var require = ((discourseRequire) => (name) => {
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/object.js
   var keys = Object.keys;
   var every = (obj, f) => {
+    // PATCHED: Add null check for obj to prevent "Cannot convert undefined or null to object" error
+    if (obj == null) {
+      return true;
+    }
     for (const key in obj) {
       if (!f(obj[key], key)) {
         return false;
@@ -788,7 +792,8 @@ var require = ((discourseRequire) => (name) => {
         },
         apply: (tr, pluginState) => {
           const change = tr.getMeta(ySyncPluginKey);
-          if (change !== void 0) {
+          // PATCHED: Add null check for change to prevent "Cannot convert undefined or null to object" error
+          if (change != null) {
             pluginState = Object.assign({}, pluginState);
             for (const key in change) {
               pluginState[key] = change[key];
@@ -1352,10 +1357,13 @@ var require = ((discourseRequire) => (name) => {
   };
   var createTypeFromElementNode = (node, meta) => {
     const type = new Y2.XmlElement(node.type.name);
-    for (const key in node.attrs) {
-      const val = node.attrs[key];
-      if (val !== null && key !== "ychange") {
-        type.setAttribute(key, val);
+    // PATCHED: Add null check for node.attrs to prevent "Cannot convert undefined or null to object" error
+    if (node.attrs != null) {
+      for (const key in node.attrs) {
+        const val = node.attrs[key];
+        if (val !== null && key !== "ychange") {
+          type.setAttribute(key, val);
+        }
       }
     }
     type.insert(
@@ -1370,6 +1378,16 @@ var require = ((discourseRequire) => (name) => {
   var createTypeFromTextOrElementNode = (node, meta) => node instanceof Array ? createTypeFromTextNodes(node, meta) : createTypeFromElementNode(node, meta);
   var isObject = (val) => typeof val === "object" && val !== null;
   var equalAttrs = (pattrs, yattrs) => {
+    // PATCHED: Add null checks for both pattrs and yattrs to prevent "Cannot convert undefined or null to object" error
+    if (pattrs == null && yattrs == null) {
+      return true;
+    }
+    if (pattrs == null) {
+      return Object.keys(yattrs).filter((key) => yattrs[key] !== null).length === 0;
+    }
+    if (yattrs == null) {
+      return Object.keys(pattrs).filter((key) => pattrs[key] !== null).length === 0;
+    }
     const keys2 = Object.keys(pattrs).filter((key) => pattrs[key] !== null);
     let eq = keys2.length === (yattrs == null ? 0 : Object.keys(yattrs).filter((key) => yattrs[key] !== null).length);
     for (let i = 0; i < keys2.length && eq; i++) {
@@ -1500,8 +1518,11 @@ var require = ((discourseRequire) => (name) => {
   var yattr2markname = (attrName) => hashedMarkNameRegex.exec(attrName)?.[1] ?? attrName;
   var attributesToMarks = (attrs, schema) => {
     const marks = [];
-    for (const markName in attrs) {
-      marks.push(schema.mark(yattr2markname(markName), attrs[markName]));
+    // PATCHED: Add null check for attrs to prevent "Cannot convert undefined or null to object" error
+    if (attrs != null) {
+      for (const markName in attrs) {
+        marks.push(schema.mark(yattr2markname(markName), attrs[markName]));
+      }
     }
     return marks;
   };
@@ -1523,17 +1544,20 @@ var require = ((discourseRequire) => (name) => {
     if (yDomFragment instanceof Y2.XmlElement) {
       const yDomAttrs = yDomFragment.getAttributes();
       const pAttrs = pNode.attrs;
-      for (const key in pAttrs) {
-        if (pAttrs[key] !== null) {
-          if (yDomAttrs[key] !== pAttrs[key] && key !== "ychange") {
-            yDomFragment.setAttribute(key, pAttrs[key]);
+      // PATCHED: Add null check for pAttrs to prevent "Cannot convert undefined or null to object" error
+      if (pAttrs != null) {
+        for (const key in pAttrs) {
+          if (pAttrs[key] !== null) {
+            if (yDomAttrs[key] !== pAttrs[key] && key !== "ychange") {
+              yDomFragment.setAttribute(key, pAttrs[key]);
+            }
+          } else {
+            yDomFragment.removeAttribute(key);
           }
-        } else {
-          yDomFragment.removeAttribute(key);
         }
       }
       for (const key in yDomAttrs) {
-        if (pAttrs[key] === void 0) {
+        if (pAttrs == null || pAttrs[key] === void 0) {
           yDomFragment.removeAttribute(key);
         }
       }

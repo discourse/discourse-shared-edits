@@ -93,6 +93,15 @@ export default class RichModeSync {
 
     const currentText = text.toString();
 
+    // Preserve trailing newline from Y.Text if present
+    // ProseMirror/markdown serializers often strip trailing newlines,
+    // but we want to preserve them for consistency with the source document
+    const currentEndsWithNewline = currentText.endsWith("\n");
+    const newEndsWithNewline = newText.endsWith("\n");
+    if (currentEndsWithNewline && !newEndsWithNewline) {
+      newText = newText + "\n";
+    }
+
     if (newText === currentText) {
       return false;
     }
@@ -125,22 +134,29 @@ export default class RichModeSync {
       text += "\n";
     });
 
-    return text.replace(/\n+$/, "");
+    // Keep one trailing newline to match markdown format, strip extras
+    return text.replace(/\n{2,}$/, "\n");
   }
 
   // Awareness update encoding
 
   encodeAwarenessUpdate(awareness, clientIds) {
-    const { encodeAwarenessUpdate } = window.SharedEditsYjs;
+    const SharedEditsYjs = window.SharedEditsYjs;
+    if (!SharedEditsYjs?.encodeAwarenessUpdate) {
+      return null;
+    }
     if (clientIds.length > 0) {
-      return encodeAwarenessUpdate(awareness, clientIds);
+      return SharedEditsYjs.encodeAwarenessUpdate(awareness, clientIds);
     }
     return null;
   }
 
   applyAwarenessUpdate(awareness, awarenessBinary) {
-    const { applyAwarenessUpdate } = window.SharedEditsYjs;
-    applyAwarenessUpdate(awareness, awarenessBinary, "sync");
+    const SharedEditsYjs = window.SharedEditsYjs;
+    if (!SharedEditsYjs?.applyAwarenessUpdate) {
+      return;
+    }
+    SharedEditsYjs.applyAwarenessUpdate(awareness, awarenessBinary, "sync");
   }
 
   get richModeFailed() {

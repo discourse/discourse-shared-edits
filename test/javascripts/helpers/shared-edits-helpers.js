@@ -1,10 +1,36 @@
-import { click, visit, waitUntil } from "@ember/test-helpers";
+import { click, getContext, visit, waitUntil } from "@ember/test-helpers";
 import { publishToMessageBus } from "discourse/tests/helpers/qunit-helpers";
+import { resetYjsModuleState } from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/yjs-document";
+import { resetProsemirrorExtensionState } from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits-prosemirror-extension";
 
 const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
 
+// Reset shared edits module state - call this from acceptance test hooks
+export function resetSharedEditsState(container) {
+  resetYjsModuleState();
+  resetProsemirrorExtensionState();
+
+  // Also reset the service if we have access to the container
+  if (container) {
+    try {
+      const manager = container.lookup("service:shared-edit-manager");
+      if (manager && !manager.isDestroying && !manager.isDestroyed) {
+        manager.resetForTests();
+      }
+    } catch {
+      // Service might not be available - that's fine
+    }
+  }
+}
+
 // Open shared edit composer for topic 280
 export async function openSharedEditComposer() {
+  // Reset module state before each test to prevent state leakage
+  // Try to get the container from test context to reset service state
+  const context = getContext();
+  const container = context?.owner;
+  resetSharedEditsState(container);
+
   await visit("/t/internationalization-localization/280");
   await click(".show-more-actions");
   await click(".show-post-admin-menu");
