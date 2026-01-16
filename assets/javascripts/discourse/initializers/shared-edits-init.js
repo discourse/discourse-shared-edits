@@ -47,7 +47,7 @@ function initWithApi(api, siteSettings) {
     ({ value, context }) => {
       if (context.model?.action === SHARED_EDIT_ACTION) {
         if (siteSettings?.shared_edits_editor_mode === "rich") {
-          return USER_OPTION_COMPOSITION_MODES.richEditor;
+          return USER_OPTION_COMPOSITION_MODES.rich;
         }
         return USER_OPTION_COMPOSITION_MODES.markdown;
       }

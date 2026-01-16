@@ -6,6 +6,9 @@ acceptance(`Discourse Shared Edits | Composer`, function (needs) {
   let commitCalls;
 
   needs.user();
+  needs.settings({
+    rich_editor: true,
+  });
 
   needs.pretender((server, helper) => {
     commitCalls = [];
@@ -103,6 +106,16 @@ acceptance(`Discourse Shared Edits | Composer`, function (needs) {
     assert
       .dom(".leave-shared-edit .btn-primary")
       .hasText(/Done/i, "Button says Done");
+
+    await click(".leave-shared-edit .btn-primary");
+  });
+
+  test("editor mode toggle is hidden in shared edit mode", async function (assert) {
+    await openSharedEdit();
+
+    assert
+      .dom(".composer-toggle-switch")
+      .doesNotExist("editor mode toggle is hidden when in shared edit mode");
 
     await click(".leave-shared-edit .btn-primary");
   });
