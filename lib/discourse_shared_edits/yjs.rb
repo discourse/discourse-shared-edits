@@ -69,7 +69,9 @@ module DiscourseSharedEdits
           }
         JS
 
-        yjs_path = File.expand_path("../../public/javascripts/yjs-dist.js", __dir__)
+        public_dir = File.expand_path("../../public/javascripts", __dir__)
+        yjs_path = Dir.glob(File.join(public_dir, "yjs-dist-*.js")).first
+        raise "yjs-dist bundle not found" unless yjs_path
         ctx.eval(File.read(yjs_path))
 
         ctx.eval(<<~JS)

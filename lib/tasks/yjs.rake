@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+require "fileutils"
 require "shellwords"
 
 namespace :shared_edits do
@@ -56,6 +58,47 @@ namespace :shared_edits do
 
       system(core_cmd) || raise("Failed to bundle Yjs core")
       system(prosemirror_cmd) || raise("Failed to bundle Yjs prosemirror")
+
+      public_dir = plugin_dir.join("public", "javascripts")
+      dist_path = public_dir.join("yjs-dist.js")
+      prosemirror_path = public_dir.join("yjs-prosemirror.js")
+
+      dist_hash = Digest::SHA256.file(dist_path).hexdigest[0, 12]
+      prosemirror_hash = Digest::SHA256.file(prosemirror_path).hexdigest[0, 12]
+
+      dist_hashed = public_dir.join("yjs-dist-#{dist_hash}.js").to_s
+      prosemirror_hashed = public_dir.join("yjs-prosemirror-#{prosemirror_hash}.js").to_s
+
+      FileUtils.cp(dist_path, dist_hashed)
+      FileUtils.cp(prosemirror_path, prosemirror_hashed)
+
+      Dir
+        .glob(public_dir.join("yjs-dist-*.js"))
+        .each { |path| FileUtils.rm_f(path) if path != dist_hashed }
+
+      Dir
+        .glob(public_dir.join("yjs-prosemirror-*.js"))
+        .each { |path| FileUtils.rm_f(path) if path != prosemirror_hashed }
+
+      FileUtils.rm_f(dist_path)
+      FileUtils.rm_f(prosemirror_path)
+
+      bundle_paths = <<~JS
+        export const YJS_DIST_URL = "/plugins/discourse-shared-edits/javascripts/yjs-dist-#{dist_hash}.js";
+        export const YJS_PROSEMIRROR_URL = "/plugins/discourse-shared-edits/javascripts/yjs-prosemirror-#{prosemirror_hash}.js";
+      JS
+
+      bundle_paths_file =
+        plugin_dir.join(
+          "assets",
+          "javascripts",
+          "discourse",
+          "lib",
+          "shared-edits",
+          "bundle-paths.js",
+        )
+      FileUtils.mkdir_p(File.dirname(bundle_paths_file))
+      File.write(bundle_paths_file, bundle_paths)
     end
   end
 end
