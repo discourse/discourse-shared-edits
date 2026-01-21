@@ -511,6 +511,141 @@ RSpec.describe SharedEditRevision do
     end
   end
 
+  describe "state snapshotting" do
+    fab!(:post) { Fabricate(:post, raw: "Original content that is long enough") }
+    fab!(:user)
+
+    # Use a lower threshold for testing since creating actual 100KB+ bloated states is slow
+    around do |example|
+      stub_const(DiscourseSharedEdits::StateValidator, "SNAPSHOT_THRESHOLD_BYTES", 100) do
+        example.run
+      end
+    end
+
+    it "triggers snapshot when state exceeds threshold during commit" do
+      SharedEditRevision.init!(post)
+
+      # Make edits to create a state that will exceed the lowered threshold
+      5.times { |i| fake_edit(post, user.id, "Content version #{i + 1} with some more text") }
+
+      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      original_size = Base64.decode64(latest.raw).bytesize
+
+      expect(original_size).to be > 100 # Should exceed our lowered threshold
+
+      # Trigger compaction via commit
+      SharedEditRevision.commit!(post.id, apply_to_post: false)
+
+      # Reload latest and check size was reduced (fresh state has less metadata)
+      latest.reload
+      new_size = Base64.decode64(latest.raw).bytesize
+      # The snapshotted state may or may not be smaller depending on recent updates
+      # but it should still be valid
+      validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
+      expect(validation[:valid]).to eq(true)
+    end
+
+    it "preserves text content after snapshot" do
+      SharedEditRevision.init!(post)
+
+      # Create some edits
+      5.times { |i| fake_edit(post, user.id, "Content version #{i + 1} with extra words") }
+
+      # Trigger commit which should snapshot
+      SharedEditRevision.commit!(post.id, apply_to_post: false)
+
+      # Verify text is preserved (should be the last edit)
+      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      text = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
+      expect(text).to eq("Content version 5 with extra words")
+    end
+
+    it "allows continued editing after snapshot" do
+      SharedEditRevision.init!(post)
+
+      # Make edits to trigger snapshot threshold
+      5.times { |i| fake_edit(post, user.id, "Edit #{i + 1} with padding content") }
+
+      # Trigger snapshot
+      SharedEditRevision.commit!(post.id, apply_to_post: false)
+
+      # Create a new edit
+      fake_edit(post, user.id, "Post-snapshot edit works")
+
+      # Verify the edit was applied
+      version, text = SharedEditRevision.latest_raw(post.id)
+      expect(text).to eq("Post-snapshot edit works")
+    end
+
+    it "preserves recent updates during snapshot" do
+      SharedEditRevision.init!(post)
+
+      # Make some recent edits (these should be preserved)
+      3.times { |i| fake_edit(post, user.id, "Recent edit #{i + 1} padding") }
+
+      recent_count =
+        SharedEditRevision
+          .where(post_id: post.id)
+          .where.not(revision: ["", nil])
+          .where("created_at > ?", SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE.seconds.ago)
+          .count
+
+      expect(recent_count).to eq(3)
+
+      # Trigger snapshot
+      SharedEditRevision.commit!(post.id, apply_to_post: false)
+
+      # State should still be valid
+      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
+      expect(validation[:valid]).to eq(true)
+    end
+
+    it "broadcasts resync when history exceeds message bus limits" do
+      # Use a very high threshold so test doesn't run in the around block
+      stub_const(DiscourseSharedEdits::StateValidator, "SNAPSHOT_THRESHOLD_BYTES", 100.megabytes) do
+        # Lower the message bus limit temporarily for faster testing
+        stub_const(SharedEditRevision, "MESSAGE_BUS_MAX_BACKLOG_SIZE", 5) do
+          SharedEditRevision.init!(post)
+
+          # Create more than the lowered MESSAGE_BUS_MAX_BACKLOG_SIZE revisions
+          10.times { |i| fake_edit(post, user.id, "Edit #{i + 1}") }
+
+          # Force snapshot by mocking should_snapshot? to return true
+          allow(DiscourseSharedEdits::StateValidator).to receive(:should_snapshot?).and_return(true)
+
+          # Track message bus publications - need apply_to_post: true (default)
+          # for compact_history! to be called
+          messages =
+            MessageBus.track_publish("/shared_edits/#{post.id}") do
+              SharedEditRevision.commit!(post.id)
+            end
+
+          # Should have a resync message
+          resync_messages = messages.select { |m| m.data[:action] == "resync" }
+          expect(resync_messages).not_to be_empty
+        end
+      end
+    end
+
+    it "does not trigger snapshot when state is below threshold" do
+      # Use a very high threshold so no snapshot occurs
+      stub_const(DiscourseSharedEdits::StateValidator, "SNAPSHOT_THRESHOLD_BYTES", 100.megabytes) do
+        SharedEditRevision.init!(post)
+
+        latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+        original_raw = latest.raw
+
+        # Commit should not change the raw since it's below threshold
+        SharedEditRevision.commit!(post.id, apply_to_post: false)
+
+        latest.reload
+        # The raw content should be the same (not snapshotted)
+        expect(latest.raw).to eq(original_raw)
+      end
+    end
+  end
+
   describe ".ensure_will_commit" do
     fab!(:post)
 

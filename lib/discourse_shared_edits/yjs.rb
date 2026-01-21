@@ -2,20 +2,15 @@
 
 require "base64"
 require "mini_racer"
-require "monitor"
 
 module DiscourseSharedEdits
   module Yjs
-    # Use Monitor instead of Mutex to allow re-entrant locking.
-    # This is important because some Yjs operations may internally call
-    # other Yjs methods that also need the lock (e.g., text_from_state
-    # might be called during state_from_text validation).
-    # Monitor allows the same thread to acquire the lock multiple times.
-    LOCK = Monitor.new
+    LOCK = Mutex.new
 
     class << self
       def context
-        @context || LOCK.synchronize { @context ||= create_context }
+        return @context if defined?(@context)
+        LOCK.synchronize { @context ||= create_context }
       end
 
       def create_context
@@ -171,32 +166,26 @@ module DiscourseSharedEdits
       end
 
       def state_from_text(text)
-        LOCK.synchronize do
-          result = context.call("stateFromText", text)
-          { state: encode(result["state"]), text: result["text"] }
-        end
+        result = context.call("stateFromText", text)
+        { state: encode(result["state"]), text: result["text"] }
       end
 
       def apply_update(state_b64, update_b64)
-        LOCK.synchronize do
-          result = context.call("applyUpdateToState", decode(state_b64), decode(update_b64))
-          { state: encode(result["state"]), text: result["text"] }
-        end
+        result = context.call("applyUpdateToState", decode(state_b64), decode(update_b64))
+        { state: encode(result["state"]), text: result["text"] }
       end
 
       def text_from_state(state_b64)
-        LOCK.synchronize { context.call("applyUpdateToState", decode(state_b64), [])["text"] }
+        context.call("applyUpdateToState", decode(state_b64), [])["text"]
       end
 
       def update_from_text_change(old_text, new_text)
-        LOCK.synchronize do
-          result = context.call("updateFromTextChange", old_text, new_text)
-          { state: encode(result["state"]), update: encode(result["update"]) }
-        end
+        result = context.call("updateFromTextChange", old_text, new_text)
+        { state: encode(result["state"]), update: encode(result["update"]) }
       end
 
       def update_from_state(state_b64, new_text)
-        LOCK.synchronize { encode(context.call("updateFromState", decode(state_b64), new_text)) }
+        encode(context.call("updateFromState", decode(state_b64), new_text))
       end
 
       private

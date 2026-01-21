@@ -119,7 +119,9 @@ const sharedEditsProsemirrorExtension = {
             return false;
           }
 
-          if (view.isDestroyed || !view.dom?.parentNode) {
+          // Check both parentNode and isConnected for robust detection of
+          // detached views (e.g., rapid close after open)
+          if (view.isDestroyed || !view.dom?.parentNode || !view.dom.isConnected) {
             return false;
           }
 

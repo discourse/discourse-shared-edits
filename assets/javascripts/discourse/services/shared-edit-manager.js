@@ -68,6 +68,8 @@ export default class SharedEditManager extends Service {
   #composerReady = false;
   #composerObserverAttached = false;
   #richModeFailed = false;
+  #closing = false;
+  #commitPromise = null;
 
   // Event handlers
   #handleDocUpdate = (update, origin) => {
@@ -130,6 +132,7 @@ export default class SharedEditManager extends Service {
     // malformed data which we should silently ignore.
     try {
       if (
+        this.#closing ||
         origin === "sync" ||
         !this.#richModeSync ||
         !this.#yjsDocument?.awareness
@@ -163,7 +166,7 @@ export default class SharedEditManager extends Service {
   };
 
   #handleRemoteMessage = (message) => {
-    if (!this.#yjsDocument?.doc) {
+    if (this.#closing || !this.#yjsDocument?.doc) {
       return;
     }
 
@@ -196,6 +199,10 @@ export default class SharedEditManager extends Service {
   };
 
   #handleResync = async () => {
+    if (this.#closing) {
+      return;
+    }
+
     const postId = this.currentPostId || this.#postId;
     if (!postId) {
       return;
@@ -386,19 +393,41 @@ export default class SharedEditManager extends Service {
   }
 
   async commit() {
+    // Re-entrancy guard: if already committing, return the same promise
+    if (this.#commitPromise) {
+      return this.#commitPromise;
+    }
+
     const postId = this.currentPostId || this.#postId;
 
     if (!postId) {
       return;
     }
 
+    this.#closing = true;
+
+    this.#commitPromise = this.#doCommit(postId);
     try {
+      return await this.#commitPromise;
+    } finally {
+      this.#commitPromise = null;
+    }
+  }
+
+  async #doCommit(postId) {
+    try {
+      // Flush any debounced XML sync before flushing updates
+      if (this.isRichMode && this.#richModeSync) {
+        this.#richModeSync.flushXmlSync();
+      }
+
       // Sync any pending rich mode changes
       if (this.isRichMode && this.#richModeSync && this.#yjsDocument) {
         const didSync = this.#richModeSync.syncYTextFromXmlFragment(
           this.#yjsDocument.xmlFragment,
           this.#yjsDocument.text,
-          this.#yjsDocument.doc
+          this.#yjsDocument.doc,
+          { consumeMarkdown: true }
         );
 
         if (didSync && this.#networkManager?.pendingUpdates.length === 0) {
@@ -406,13 +435,22 @@ export default class SharedEditManager extends Service {
         }
       }
 
-      await this.#networkManager?.flushPendingUpdates(postId, {
-        isRichMode: this.isRichMode,
-        cursorPayload: this.#markdownSync?.buildCursorPayload(
-          this.#yjsDocument?.text
-        ),
-        getClientId: () => this.messageBus.clientId,
-      });
+      const flushResult = await this.#networkManager?.flushPendingUpdates(
+        postId,
+        {
+          isRichMode: this.isRichMode,
+          cursorPayload: this.#markdownSync?.buildCursorPayload(
+            this.#yjsDocument?.text
+          ),
+          getClientId: () => this.messageBus.clientId,
+        }
+      );
+
+      // If a resync happened during flush, abort commit - the state is stale
+      if (flushResult?.resynced) {
+        this.#closing = false;
+        return;
+      }
 
       this.#detachComposerObserver();
       this.#networkManager?.unsubscribe(postId);
@@ -421,6 +459,7 @@ export default class SharedEditManager extends Service {
 
       this.#cleanup();
     } catch (e) {
+      this.#closing = false;
       popupAjaxError(e);
     }
   }
@@ -477,6 +516,14 @@ export default class SharedEditManager extends Service {
       onTextObserve: this.#handleTextChange,
       onRichModeFailed: () => {
         this.#richModeFailed = true;
+        // Clean up rich mode sync and create markdown sync instead
+        if (this.#richModeSync) {
+          this.#richModeSync.teardown(null, null);
+          this.#richModeSync = null;
+        }
+        if (!this.#markdownSync) {
+          this.#markdownSync = new MarkdownSync(this);
+        }
       },
       undoOrigin: this,
     };
@@ -548,6 +595,9 @@ export default class SharedEditManager extends Service {
     this.pendingComposerReply = null;
     this.#composerReady = false;
     this.#richModeFailed = false;
+    this.#closing = false;
+    this.#commitPromise = null;
+    this.suppressComposerChange = false;
   }
 
   // Test support: force cleanup of all state without committing
@@ -560,7 +610,7 @@ export default class SharedEditManager extends Service {
   }
 
   async #sendUpdates() {
-    if (this.isDestroying || this.isDestroyed) {
+    if (this.#closing || this.isDestroying || this.isDestroyed) {
       return;
     }
 

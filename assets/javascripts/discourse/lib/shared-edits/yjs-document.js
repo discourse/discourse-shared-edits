@@ -73,30 +73,39 @@ export function clearRichModeSerializers() {
   capturedMarkdown = null;
 }
 
-export function getMarkdownFromView() {
-  // capturedMarkdown is only used when the view is destroyed (during commit)
-  // Consume it once and clear it so subsequent calls get fresh data
+export function getMarkdownFromView({ consumeCapture = false } = {}) {
+  // Try to get markdown from live ProseMirror view first.
+  // This ensures we always use the current editor state when the view is available,
+  // rather than potentially stale captured markdown from a previous session.
+  if (convertToMarkdownFn && prosemirrorViewGetter) {
+    const view = prosemirrorViewGetter();
+    if (view && !view.isDestroyed) {
+      try {
+        const result = convertToMarkdownFn(view.state.doc);
+        // Successfully got markdown from live view - clear any stale captured value
+        if (capturedMarkdown !== null) {
+          capturedMarkdown = null;
+        }
+        return result;
+      } catch {
+        // Fall through to captured markdown fallback
+      }
+    }
+  }
+
+  // Fall back to captured markdown only when the live view is not available.
+  // This happens during commit when the ProseMirror view has been destroyed
+  // but we still need to serialize the final document state.
   if (capturedMarkdown !== null) {
-    const captured = capturedMarkdown;
-    capturedMarkdown = null;
-    return captured;
+    if (consumeCapture) {
+      const captured = capturedMarkdown;
+      capturedMarkdown = null;
+      return captured;
+    }
+    return capturedMarkdown;
   }
 
-  if (!convertToMarkdownFn || !prosemirrorViewGetter) {
-    return null;
-  }
-
-  const view = prosemirrorViewGetter();
-
-  if (!view || view.isDestroyed) {
-    return null;
-  }
-
-  try {
-    return convertToMarkdownFn(view.state.doc);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 // Test support: reset module state between tests

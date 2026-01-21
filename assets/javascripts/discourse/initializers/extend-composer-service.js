@@ -51,11 +51,17 @@ export default {
               if (wasSharedEdit) {
                 this.sharedEditManager.suppressComposerChange = true;
               }
-              const result = await super.close(...arguments);
-              if (wasSharedEdit) {
-                await this.sharedEditManager.commit();
+              try {
+                const result = await super.close(...arguments);
+                if (wasSharedEdit) {
+                  await this.sharedEditManager.commit();
+                }
+                return result;
+              } finally {
+                if (wasSharedEdit) {
+                  this.sharedEditManager.suppressComposerChange = false;
+                }
               }
-              return result;
             }
 
             save() {

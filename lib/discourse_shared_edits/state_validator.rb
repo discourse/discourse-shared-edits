@@ -2,6 +2,8 @@
 
 module DiscourseSharedEdits
   module StateValidator
+    SNAPSHOT_THRESHOLD_BYTES = 100.kilobytes
+
     class StateCorruptionError < StandardError
       attr_reader :post_id, :version, :recovery_attempted
 
@@ -46,6 +48,15 @@ module DiscourseSharedEdits
         rescue ArgumentError => e
           { valid: false, error: "Invalid base64: #{e.message}" }
         end
+      end
+
+      def should_snapshot?(state_b64)
+        return false if state_b64.blank?
+
+        state_bytes = Base64.decode64(state_b64).bytesize
+        state_bytes > SNAPSHOT_THRESHOLD_BYTES
+      rescue ArgumentError
+        false
       end
 
       def validate_awareness(awareness_b64)
@@ -94,6 +105,17 @@ module DiscourseSharedEdits
           if validation[:valid]
             report[:current_text] = validation[:text]
             report[:text_length] = validation[:text]&.length
+
+            state_bytes = Base64.decode64(latest.raw).bytesize rescue 0
+            text_bytes = [validation[:text].to_s.bytesize, 1].max
+
+            report[:state_size_bytes] = state_bytes
+            report[:text_size_bytes] = text_bytes
+            report[:bloat_ratio] = (state_bytes.to_f / text_bytes).round(2)
+
+            if should_snapshot?(latest.raw)
+              report[:warnings] << "State is bloated (#{state_bytes} bytes) - snapshot will occur on next commit"
+            end
           else
             report[:healthy] = false
             report[

@@ -7,7 +7,7 @@ class SharedEditRevision < ActiveRecord::Base
   MAX_HISTORY_AGE = 1.minute
   MAX_HISTORY_COUNT = 200
   MESSAGE_BUS_MAX_BACKLOG_AGE = 600
-  MESSAGE_BUS_MAX_BACKLOG_SIZE = 100
+  MESSAGE_BUS_MAX_BACKLOG_SIZE = 500
   MAX_AWARENESS_BYTES = 10.kilobytes
   MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits"
   DEFAULT_COMMIT_DELAY_SECONDS = 30
@@ -255,8 +255,84 @@ class SharedEditRevision < ActiveRecord::Base
 
     all_keep_ids = (keep_ids + keep_raw_ids).to_a
     SharedEditRevision.where(post_id: post_id).where.not(id: all_keep_ids).delete_all
+
+    # Check if snapshotting is needed to reduce state bloat
+    # Re-fetch latest since it may have been modified above
+    latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+    if latest&.raw.present? && DiscourseSharedEdits::StateValidator.should_snapshot?(latest.raw)
+      snapshot_state!(post_id, latest)
+    end
   end
   private_class_method :compact_history!
+
+  def self.snapshot_state!(post_id, latest)
+    return if latest&.raw.blank?
+
+    original_size =
+      begin
+        Base64.decode64(latest.raw).bytesize
+      rescue StandardError
+        0
+      end
+
+    # Get recent revisions within BOTH message bus limits:
+    # - Time: MESSAGE_BUS_MAX_BACKLOG_AGE (10 min)
+    # - Count: MESSAGE_BUS_MAX_BACKLOG_SIZE (500 messages)
+    # This ensures new clients can catch up via message bus
+    all_recent =
+      SharedEditRevision
+        .where(post_id: post_id)
+        .where("created_at > ?", MESSAGE_BUS_MAX_BACKLOG_AGE.seconds.ago)
+        .where.not(revision: ["", nil])
+        .order(version: :desc)
+
+    # Check if we need to truncate to message bus size limit
+    needs_resync = all_recent.count > MESSAGE_BUS_MAX_BACKLOG_SIZE
+
+    # Take only what message bus can hold, then reverse to apply in order
+    recent_revisions = all_recent.limit(MESSAGE_BUS_MAX_BACKLOG_SIZE).to_a.reverse
+
+    # Extract text and create fresh base state
+    text = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
+    fresh_state = DiscourseSharedEdits::Yjs.state_from_text(text)[:state]
+
+    # Re-apply recent updates to preserve item ID continuity
+    recent_revisions.each do |rev|
+      result = DiscourseSharedEdits::Yjs.apply_update(fresh_state, rev.revision)
+      fresh_state = result[:state]
+    end
+
+    # Update in place
+    latest.update!(raw: fresh_state)
+
+    new_size =
+      begin
+        Base64.decode64(fresh_state).bytesize
+      rescue StandardError
+        0
+      end
+
+    Rails.logger.info(
+      "[SharedEdits] Snapshotted state for post #{post_id} v#{latest.version}: " \
+        "#{original_size} -> #{new_size} bytes (preserved #{recent_revisions.count} recent updates)",
+    )
+
+    # If we had to truncate history beyond message bus limits, force resync
+    # so all clients get the new baseline state
+    if needs_resync
+      post = Post.find(post_id)
+      post.publish_message!(
+        message_bus_channel(post_id),
+        { action: "resync", version: latest.version },
+        max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
+        max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
+      )
+      Rails.logger.info(
+        "[SharedEdits] Broadcast resync for post #{post_id} - history exceeded message bus limits",
+      )
+    end
+  end
+  private_class_method :snapshot_state!
 
   def self.revise!(
     post_id:,

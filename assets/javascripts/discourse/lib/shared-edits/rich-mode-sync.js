@@ -74,6 +74,14 @@ export default class RichModeSync {
     this.#onXmlFragmentChange?.();
   }
 
+  flushXmlSync() {
+    if (this.#syncDebounceId) {
+      cancel(this.#syncDebounceId);
+      this.#syncDebounceId = null;
+      this.#triggerXmlFragmentSync();
+    }
+  }
+
   setupAwarenessHandler(awareness, onAwarenessUpdate) {
     this.#awarenessUpdateHandler = onAwarenessUpdate;
     awareness.on("update", this.#awarenessUpdateHandler);
@@ -81,13 +89,20 @@ export default class RichModeSync {
 
   // Sync Y.Text from xmlFragment
 
-  syncYTextFromXmlFragment(xmlFragment, text, doc) {
+  syncYTextFromXmlFragment(xmlFragment, text, doc, { consumeMarkdown = false } = {}) {
     if (!xmlFragment || xmlFragment.length === 0 || !text || !doc) {
       return false;
     }
 
-    let newText = getMarkdownFromView();
+    let newText = getMarkdownFromView({ consumeCapture: consumeMarkdown });
     if (newText === null) {
+      // ProseMirror serialization unavailable - this is a degraded state
+      // Log a warning and attempt the lossy fallback only as last resort
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[SharedEdits] ProseMirror markdown serialization unavailable, " +
+        "falling back to lossy XML text extraction"
+      );
       newText = this.#extractTextFromXmlFragment(xmlFragment);
     }
 

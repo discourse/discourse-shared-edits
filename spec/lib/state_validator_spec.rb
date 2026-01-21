@@ -60,6 +60,33 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
     end
   end
 
+  describe ".should_snapshot?" do
+    it "returns false for nil state" do
+      expect(described_class.should_snapshot?(nil)).to eq(false)
+    end
+
+    it "returns false for empty state" do
+      expect(described_class.should_snapshot?("")).to eq(false)
+    end
+
+    it "returns false for state below threshold" do
+      state = DiscourseSharedEdits::Yjs.state_from_text("Hello world")[:state]
+      expect(described_class.should_snapshot?(state)).to eq(false)
+    end
+
+    it "returns true for state above threshold" do
+      # Create a state larger than 100KB by creating large text
+      # The Yjs state will be even larger than the text due to CRDT metadata
+      large_text = "x" * 120_000
+      state = DiscourseSharedEdits::Yjs.state_from_text(large_text)[:state]
+      expect(described_class.should_snapshot?(state)).to eq(true)
+    end
+
+    it "returns false for invalid base64" do
+      expect(described_class.should_snapshot?("not-valid-base64!!!")).to eq(false)
+    end
+  end
+
   describe ".validate_update" do
     it "returns valid for a properly encoded update" do
       old_text = "Hello"
@@ -159,6 +186,31 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       expect(report[:version_gaps]).to be_present
       expect(report[:version_gaps].first[:expected]).to eq(2)
       expect(report[:version_gaps].first[:got]).to eq(5)
+    end
+
+    it "includes size metrics in the report" do
+      SharedEditRevision.init!(post)
+
+      report = described_class.health_check(post.id)
+
+      expect(report[:state_size_bytes]).to be_a(Integer)
+      expect(report[:state_size_bytes]).to be > 0
+      expect(report[:text_size_bytes]).to be_a(Integer)
+      expect(report[:text_size_bytes]).to be > 0
+      expect(report[:bloat_ratio]).to be_a(Float)
+      expect(report[:bloat_ratio]).to be > 0
+    end
+
+    it "adds warning when state exceeds snapshot threshold" do
+      SharedEditRevision.init!(post)
+
+      # Mock should_snapshot? to return true
+      allow(described_class).to receive(:should_snapshot?).and_return(true)
+
+      report = described_class.health_check(post.id)
+
+      expect(report[:healthy]).to eq(true)
+      expect(report[:warnings]).to include(match(/bloated.*snapshot will occur/))
     end
   end
 

@@ -96,6 +96,7 @@ export default class NetworkManager {
   }
 
   // Called by the orchestrator service to actually send updates
+  // Returns { resynced: true } if a 409 state_recovered triggered a resync
   async sendUpdates(postId, { cursorPayload, isRichMode, getClientId } = {}) {
     const updatesToSend = [...this.pendingUpdates];
     const awarenessToSend = this.pendingAwarenessUpdate;
@@ -104,7 +105,7 @@ export default class NetworkManager {
     const hasAwarenessUpdate = isRichMode && awarenessToSend;
 
     if ((!hasDocUpdates && !hasAwarenessUpdate) || !postId) {
-      return;
+      return { resynced: false };
     }
 
     if (this.ajaxInProgress) {
@@ -118,10 +119,14 @@ export default class NetworkManager {
     };
 
     if (hasDocUpdates) {
+      // Guard Y.mergeUpdates availability - may not be loaded during rapid open/close
+      const Y = window.SharedEditsYjs?.Y || window.Y;
       const payload =
         updatesToSend.length === 1
           ? updatesToSend[0]
-          : window.Y.mergeUpdates(updatesToSend);
+          : Y?.mergeUpdates
+            ? Y.mergeUpdates(updatesToSend)
+            : updatesToSend[0];
       data.update = uint8ArrayToBase64(payload);
     }
 
@@ -144,13 +149,14 @@ export default class NetworkManager {
       });
 
       await this.inFlightRequest;
+      return { resynced: false };
     } catch (e) {
       if (
         e.jqXHR?.status === 409 &&
         e.jqXHR?.responseJSON?.error === "state_recovered"
       ) {
         this.#onResync?.();
-        return;
+        return { resynced: true };
       }
 
       // Re-queue failed updates
@@ -177,13 +183,16 @@ export default class NetworkManager {
       this.pendingUpdates.length > 0 ||
       (options.isRichMode && this.pendingAwarenessUpdate);
 
+    let result = { resynced: false };
     if (hasUpdates) {
-      await this.sendUpdates(postId, options);
+      result = (await this.sendUpdates(postId, options)) || { resynced: false };
     }
 
     if (this.inFlightRequest) {
       await this.inFlightRequest;
     }
+
+    return result;
   }
 
   // MessageBus subscription
