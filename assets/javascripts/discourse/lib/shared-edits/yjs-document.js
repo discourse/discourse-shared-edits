@@ -5,8 +5,8 @@
 import { getOwner, setOwner } from "@ember/owner";
 import { service } from "@ember/service";
 import loadScript from "discourse/lib/load-script";
-import { base64ToUint8Array, getUserColorForId } from "./encoding-utils";
 import { YJS_DIST_URL, YJS_PROSEMIRROR_URL } from "./bundle-paths";
+import { base64ToUint8Array, getUserColorForId } from "./encoding-utils";
 
 // Yjs loading promises (module-level for singleton behavior)
 let yjsPromise;
