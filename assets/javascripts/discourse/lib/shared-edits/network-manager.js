@@ -9,8 +9,10 @@ import { ajax } from "discourse/lib/ajax";
 import { base64ToUint8Array, uint8ArrayToBase64 } from "./encoding-utils";
 import { triggerYjsLoad } from "./yjs-document";
 
-const THROTTLE_SAVE = 350;
+const THROTTLE_SAVE = 500;
 const MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits";
+const MAX_PENDING_UPDATES = 100;
+const MAX_RETRY_ATTEMPTS = 3;
 
 function messageBusChannel(postId) {
   return `${MESSAGE_BUS_CHANNEL_PREFIX}/${postId}`;
@@ -30,6 +32,7 @@ export default class NetworkManager {
   #messageBusLastSubscribedId = null;
   #onRemoteMessage = null;
   #onResync = null;
+  #retryCount = 0;
 
   #handleRemoteMessage = (message) => {
     if (message.action === "resync") {
@@ -162,19 +165,30 @@ export default class NetworkManager {
       });
 
       await this.inFlightRequest;
+      this.#retryCount = 0;
       return { resynced: false };
     } catch (e) {
       if (
         e.jqXHR?.status === 409 &&
         e.jqXHR?.responseJSON?.error === "state_recovered"
       ) {
+        this.#retryCount = 0;
         this.#onResync?.();
         return { resynced: true };
       }
 
-      // Re-queue failed updates
-      if (sentUpdates.length) {
-        this.pendingUpdates = sentUpdates.concat(this.pendingUpdates);
+      this.#retryCount++;
+
+      // Re-queue failed updates with bounded retry
+      if (sentUpdates.length && this.#retryCount <= MAX_RETRY_ATTEMPTS) {
+        const combined = sentUpdates.concat(this.pendingUpdates);
+        this.pendingUpdates = combined.slice(0, MAX_PENDING_UPDATES);
+      } else if (this.#retryCount > MAX_RETRY_ATTEMPTS) {
+        // eslint-disable-next-line no-console
+        console.error("[SharedEdits] Max retries exceeded, triggering resync");
+        this.#retryCount = 0;
+        this.#onResync?.();
+        return { resynced: true };
       }
 
       if (awarenessToSend && !this.pendingAwarenessUpdate) {

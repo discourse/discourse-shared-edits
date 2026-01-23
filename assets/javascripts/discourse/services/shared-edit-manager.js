@@ -215,6 +215,12 @@ export default class SharedEditManager extends Service {
       return;
     }
 
+    // Clear pending state before fetching new state
+    if (this.#networkManager) {
+      this.#networkManager.pendingUpdates = [];
+      this.#networkManager.pendingAwarenessUpdate = null;
+    }
+
     try {
       const data = await this.#networkManager?.fetchState(postId);
       if (!this.composer.model || this.isDestroying || this.isDestroyed) {
@@ -231,6 +237,25 @@ export default class SharedEditManager extends Service {
   };
 
   #handleRichModeError = () => {
+    // Attempt final sync before giving up
+    if (this.#richModeSync && this.#yjsDocument) {
+      try {
+        this.#richModeSync.flushXmlSync();
+        this.#richModeSync.syncYTextFromXmlFragment(
+          this.#yjsDocument.xmlFragment,
+          this.#yjsDocument.text,
+          this.#yjsDocument.doc,
+          { consumeMarkdown: true }
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[SharedEdits] Final sync failed during rich mode error:",
+          e
+        );
+      }
+    }
+
     this.#richModeFailed = true;
 
     if (this.composer?.model?.action === "sharedEdit") {

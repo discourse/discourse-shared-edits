@@ -317,7 +317,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       )
     end
 
-    it "raises StateCorruptionError when result exceeds max_post_length" do
+    it "raises PostLengthExceededError when result exceeds max_post_length" do
       SiteSetting.max_post_length = 100
 
       initial_state = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
@@ -325,7 +325,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       update = DiscourseSharedEdits::Yjs.update_from_state(initial_state, long_text)
 
       expect { described_class.safe_apply_update(post.id, initial_state, update) }.to raise_error(
-        DiscourseSharedEdits::StateValidator::StateCorruptionError,
+        DiscourseSharedEdits::StateValidator::PostLengthExceededError,
         /exceeds maximum allowed/,
       )
     end

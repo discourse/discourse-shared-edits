@@ -410,8 +410,8 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       it "returns 429 when rate limit is exceeded" do
         RateLimiter.enable
 
-        # Exhaust the rate limit (60 per minute)
-        61.times do |i|
+        # Exhaust the rate limit (120 per minute)
+        121.times do |i|
           latest_state = latest_state_for(post1)
           new_text = "Edit #{i}"
           put "/shared_edits/p/#{post1.id}",

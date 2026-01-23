@@ -5,6 +5,7 @@ module DiscourseSharedEdits
     SNAPSHOT_THRESHOLD_BYTES = 100.kilobytes
     RECOVERY_RATE_LIMIT_SECONDS = 30
     MAX_RECOVERY_ATTEMPTS_PER_HOUR = 10
+    MAX_UPDATE_BYTES = 1.megabyte
 
     class StateCorruptionError < StandardError
       attr_reader :post_id, :version, :recovery_attempted
@@ -31,6 +32,17 @@ module DiscourseSharedEdits
 
       def initialize(message, post_id:)
         @post_id = post_id
+        super(message)
+      end
+    end
+
+    class PostLengthExceededError < StandardError
+      attr_reader :post_id, :current_length, :max_length
+
+      def initialize(message, post_id:, current_length:, max_length:)
+        @post_id = post_id
+        @current_length = current_length
+        @max_length = max_length
         super(message)
       end
     end
@@ -64,6 +76,9 @@ module DiscourseSharedEdits
         begin
           decoded = Base64.strict_decode64(update_b64)
           return { valid: false, error: "Decoded update is empty" } if decoded.empty?
+          if decoded.bytesize > MAX_UPDATE_BYTES
+            return { valid: false, error: "Update payload too large (#{decoded.bytesize} bytes)" }
+          end
           { valid: true, error: nil }
         rescue ArgumentError => e
           { valid: false, error: "Invalid base64: #{e.message}" }
@@ -246,9 +261,11 @@ module DiscourseSharedEdits
         text_length = result[:text]&.length || 0
         max_length = SiteSetting.max_post_length
         if text_length > max_length
-          raise StateCorruptionError.new(
+          raise PostLengthExceededError.new(
                   "Post length #{text_length} exceeds maximum allowed #{max_length}",
                   post_id: post_id,
+                  current_length: text_length,
+                  max_length: max_length,
                 )
         end
 

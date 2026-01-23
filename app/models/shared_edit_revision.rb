@@ -47,7 +47,15 @@ class SharedEditRevision < ActiveRecord::Base
       init!(post)
       post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED] = true
     else
-      commit!(post_id)
+      result = commit!(post_id)
+      if result.nil?
+        latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+        if latest&.raw.present?
+          Rails.logger.warn(
+            "[SharedEdits] Disabling shared edits for post #{post_id} with uncommitted changes",
+          )
+        end
+      end
       SharedEditRevision.where(post_id: post_id).delete_all
       post.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
     end
@@ -89,12 +97,20 @@ class SharedEditRevision < ActiveRecord::Base
 
     return raw unless apply_to_post
 
+    post = Post.find(post_id)
+    topic = post.topic
+
+    if topic&.closed? || topic&.archived?
+      Rails.logger.warn(
+        "[SharedEdits] Cannot commit to post #{post_id}: topic is #{topic.closed? ? "closed" : "archived"}",
+      )
+      return nil
+    end
+
     if latest.post_revision_id.present?
       compact_history!(post_id)
       return raw
     end
-
-    post = Post.find(post_id)
 
     # Normalize both texts the same way PostRevisor does to avoid
     # creating spurious revisions when content is effectively unchanged

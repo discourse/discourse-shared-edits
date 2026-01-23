@@ -83,7 +83,7 @@ module ::DiscourseSharedEdits
       params.require(:post_id)
 
       guardian.ensure_can_edit!(@post)
-      SharedEditRevision.commit!(@post.id)
+      SharedEditRevision.with_commit_lock(@post.id) { SharedEditRevision.commit!(@post.id) }
 
       render json: success_json
     end
@@ -93,7 +93,7 @@ module ::DiscourseSharedEdits
 
       guardian.ensure_can_edit!(@post)
 
-      RateLimiter.new(current_user, "shared-edit-revise-#{@post.id}", 60, 1.minute).performed!
+      RateLimiter.new(current_user, "shared-edit-revise-#{@post.id}", 120, 1.minute).performed!
 
       awareness = params[:awareness]
       if awareness.present?
@@ -170,6 +170,22 @@ module ::DiscourseSharedEdits
                message: I18n.t("shared_edits.errors.invalid_update"),
              },
              status: :bad_request
+    rescue StateValidator::PostLengthExceededError => e
+      Rails.logger.warn(
+        "[SharedEdits] Post length exceeded for post #{params[:post_id]}: #{e.message}",
+      )
+      render json: {
+               error: "post_length_exceeded",
+               message:
+                 I18n.t(
+                   "shared_edits.errors.post_length_exceeded",
+                   current: e.current_length,
+                   max: e.max_length,
+                 ),
+               current_length: e.current_length,
+               max_length: e.max_length,
+             },
+             status: :unprocessable_entity
     rescue StateValidator::StateCorruptionError => e
       Rails.logger.error(
         "[SharedEdits] State corruption in revise for post #{params[:post_id]}: #{e.message}",
