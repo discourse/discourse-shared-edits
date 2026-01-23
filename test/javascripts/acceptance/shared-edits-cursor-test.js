@@ -110,7 +110,7 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     await publishToMessageBus("/shared_edits/398", {
       client_id: "remote-client-1",
       user_id: 123,
-      user_name: "remoteuser",
+      username: "remoteuser",
       update: base64Update,
       cursor: { start: cursorBase64 },
     });
@@ -212,7 +212,7 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     await publishToMessageBus("/shared_edits/398", {
       client_id: "remote-client-2",
       user_id: 456,
-      user_name: "cursor-metadata",
+      username: "cursor-metadata",
       update: updateBase64,
       cursor: { start: cursorBase64 },
     });

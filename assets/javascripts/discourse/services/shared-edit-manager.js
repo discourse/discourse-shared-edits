@@ -191,7 +191,7 @@ export default class SharedEditManager extends Service {
           type: "remote",
           client_id: message.client_id,
           user_id: message.user_id,
-          user_name: message.user_name,
+          username: message.username,
           cursor,
         });
       }

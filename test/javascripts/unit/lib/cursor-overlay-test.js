@@ -38,7 +38,7 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
   test("creates cursor element with correct structure", function (assert) {
     const cursor = overlay.createCursorElement({
       user_id: 123,
-      user_name: "testuser",
+      username: "testuser",
     });
 
     assert.true(Boolean(cursor.element), "Cursor element was created");
@@ -57,7 +57,7 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
       "Label shows username"
     );
     assert.strictEqual(
-      cursor.user.user_name,
+      cursor.user.username,
       "testuser",
       "User data is stored"
     );
@@ -109,7 +109,7 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
     // Create a cursor manually
     const cursor = overlay.createCursorElement({
       user_id: 456,
-      user_name: "toremove",
+      username: "toremove",
     });
     overlay.cursors.set("client-to-remove", cursor);
     overlay.container.appendChild(cursor.element);
@@ -139,11 +139,11 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
     // Add some cursors
     const cursor1 = overlay.createCursorElement({
       user_id: 1,
-      user_name: "user1",
+      username: "user1",
     });
     const cursor2 = overlay.createCursorElement({
       user_id: 2,
-      user_name: "user2",
+      username: "user2",
     });
     overlay.cursors.set("client1", cursor1);
     overlay.cursors.set("client2", cursor2);
@@ -180,7 +180,7 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
   test("markTypist sets timeout for cursor hiding", async function (assert) {
     const cursor = overlay.createCursorElement({
       user_id: 789,
-      user_name: "typist",
+      username: "typist",
     });
     overlay.cursors.set("typist-client", cursor);
     overlay.container.appendChild(cursor.element);

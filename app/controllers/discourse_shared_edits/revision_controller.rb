@@ -111,7 +111,7 @@ module ::DiscourseSharedEdits
             {
               client_id: params[:client_id],
               user_id: current_user.id,
-              user_name: current_user.username,
+              username: current_user.username,
               awareness: awareness,
             },
             max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
@@ -145,7 +145,7 @@ module ::DiscourseSharedEdits
           cursor: cursor_hash,
           awareness: awareness,
           post: @post,
-          user_name: current_user.username,
+          username: current_user.username,
           allow_blank_state: allow_blank_state,
         )
 

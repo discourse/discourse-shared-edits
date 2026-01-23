@@ -66,9 +66,14 @@ export default class CursorOverlay {
     }
     let cursor = this.cursors.get(clientId);
 
-    if (cursor && cursor.user.username !== origin.user_name) {
+    if (cursor && cursor.user.username !== origin.username) {
       cursor.element.remove();
       this.cursors.delete(clientId);
+      const typist = this.activeTypists.get(clientId);
+      if (typist?.timeout) {
+        clearTimeout(typist.timeout);
+      }
+      this.activeTypists.delete(clientId);
       cursor = null;
     }
 
@@ -76,7 +81,7 @@ export default class CursorOverlay {
     if (isNew) {
       cursor = this.createCursorElement({
         user_id: origin.user_id,
-        user_name: origin.user_name,
+        username: origin.username,
       });
       this.cursors.set(clientId, cursor);
     }
@@ -171,7 +176,7 @@ export default class CursorOverlay {
 
     const label = document.createElement("div");
     label.className = "shared-edits-cursor__label";
-    label.textContent = user.user_name;
+    label.textContent = user.username;
     label.style.backgroundColor = color;
 
     el.appendChild(label);

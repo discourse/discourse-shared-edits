@@ -173,7 +173,7 @@ acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
     await publishToMessageBus("/shared_edits/398", {
       client_id: "remote-client",
       user_id: 999,
-      user_name: "remote_user",
+      username: "remote_user",
       update: base64Update,
     });
 
@@ -223,7 +223,7 @@ acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
     await publishToMessageBus("/shared_edits/398", {
       client_id: "remote-client",
       user_id: 999,
-      user_name: "remote_user",
+      username: "remote_user",
       update: base64Update,
     });
 

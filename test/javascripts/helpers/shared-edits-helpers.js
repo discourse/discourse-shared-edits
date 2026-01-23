@@ -76,7 +76,7 @@ export async function simulateRemoteEdit(postId, updateBase64, options = {}) {
   await publishToMessageBus(`/shared_edits/${postId}`, {
     client_id: options.clientId || "remote-client",
     user_id: options.userId || 999,
-    user_name: options.userName || "remote_user",
+    username: options.username || "remote_user",
     update: updateBase64,
     cursor: options.cursor,
     awareness: options.awareness,

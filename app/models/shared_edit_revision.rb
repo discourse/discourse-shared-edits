@@ -382,7 +382,7 @@ class SharedEditRevision < ActiveRecord::Base
     cursor: nil,
     awareness: nil,
     post: nil,
-    user_name: nil,
+    username: nil,
     allow_blank_state: false
   )
     retries = 0
@@ -411,13 +411,13 @@ class SharedEditRevision < ActiveRecord::Base
           )
 
         post ||= Post.find(post_id)
-        user_name ||= User.find(user_id).username
+        username ||= User.find(user_id).username
         message = {
           version: revision.version,
           update: update,
           client_id: client_id,
           user_id: user_id,
-          user_name: user_name,
+          username: username,
         }
         message[:cursor] = cursor if cursor.present?
         message[:awareness] = awareness if awareness.present?
