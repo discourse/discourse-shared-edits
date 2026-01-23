@@ -46,7 +46,7 @@ var require = ((discourseRequire) => (name) => {
     mod
   ));
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/cursor-plugin.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/cursor-plugin.js
   var Y4 = __toESM(__require("yjs"), 1);
   var import_prosemirror_view2 = __require("prosemirror-view");
   var import_prosemirror_state3 = __require("prosemirror-state");
@@ -376,7 +376,7 @@ var require = ((discourseRequire) => (name) => {
     };
   };
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/sync-plugin.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/sync-plugin.js
   var PModel = __toESM(__require("prosemirror-model"), 1);
   var import_prosemirror_state2 = __require("prosemirror-state");
 
@@ -402,13 +402,13 @@ var require = ((discourseRequire) => (name) => {
   };
   var simpleDiff = simpleDiffString;
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/keys.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/keys.js
   var import_prosemirror_state = __require("prosemirror-state");
   var ySyncPluginKey = new import_prosemirror_state.PluginKey("y-sync");
   var yUndoPluginKey = new import_prosemirror_state.PluginKey("y-undo");
   var yCursorPluginKey = new import_prosemirror_state.PluginKey("yjs-cursor");
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/sync-plugin.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/sync-plugin.js
   var Y2 = __toESM(__require("yjs"), 1);
 
   // node_modules/.pnpm/lib0@0.2.114/node_modules/lib0/random.js
@@ -721,7 +721,7 @@ var require = ((discourseRequire) => (name) => {
   var toBase64 = isBrowser ? toBase64Browser : toBase64Node;
   var encodeAny = (data) => encode((encoder) => writeAny(encoder, data));
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/utils.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/utils.js
   var _convolute = (digest2) => {
     const N = 6;
     for (let i = N; i < digest2.length; i++) {
@@ -731,7 +731,7 @@ var require = ((discourseRequire) => (name) => {
   };
   var hashOfJSON = (json) => toBase64(_convolute(digest(encodeAny(json))));
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/sync-plugin.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/sync-plugin.js
   var isVisible = (item, snapshot2) => snapshot2 === void 0 ? !item.deleted : snapshot2.sv.has(item.id.client) && /** @type {number} */
   snapshot2.sv.get(item.id.client) > item.id.clock && !Y2.isDeleted(snapshot2.ds, item.id);
   var defaultColors = [{ light: "#ecd44433", dark: "#ecd444" }];
@@ -1178,7 +1178,7 @@ var require = ((discourseRequire) => (name) => {
         );
         restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
         tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y2.UndoManager });
-        if (this.beforeTransactionSelection !== null && this._isLocalCursorInView()) {
+        if (this.beforeTransactionSelection !== null && this._isLocalCursorInView() && transaction.origin !== "remote") {
           tr.scrollIntoView();
         }
         this.prosemirrorView.dispatch(tr);
@@ -1655,7 +1655,7 @@ var require = ((discourseRequire) => (name) => {
   };
   var matchNodeName = (yElement, pNode) => !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/lib.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/lib.js
   var Y3 = __toESM(__require("yjs"), 1);
   var import_prosemirror_view = __require("prosemirror-view");
   var import_prosemirror_model = __require("prosemirror-model");
@@ -1841,7 +1841,7 @@ var require = ((discourseRequire) => (name) => {
     return type;
   }
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/cursor-plugin.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/cursor-plugin.js
   var defaultAwarenessStateFilter = (currentClientId, userClientId, _user) => currentClientId !== userClientId;
   var defaultCursorBuilder = (user) => {
     const cursor = document.createElement("span");
@@ -2014,7 +2014,7 @@ var require = ((discourseRequire) => (name) => {
     }
   });
 
-  // node_modules/.pnpm/y-prosemirror@1.3.7_prosemirror-model@1.25.4_prosemirror-state@1.4.4_prosemirror-view@1.41.4__3svvxrikmo32zuwez64su7boku/node_modules/y-prosemirror/src/plugins/undo-plugin.js
+  // node_modules/.pnpm/y-prosemirror@1.3.7_patch_hash=clvvlcquawfe6tbof2n33ojq7m_prosemirror-model@1.25.4_prosemirro_bipfcyy7lelftrn46yzm76fxam/node_modules/y-prosemirror/src/plugins/undo-plugin.js
   var import_prosemirror_state4 = __require("prosemirror-state");
   var import_yjs = __require("yjs");
   var undo = (state) => yUndoPluginKey.getState(state)?.undoManager?.undo() != null;

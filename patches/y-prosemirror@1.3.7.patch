@@ -1,0 +1,13 @@
+diff --git a/src/plugins/sync-plugin.js b/src/plugins/sync-plugin.js
+index dccfb76918c8c70fe5a5b12372cdabcc9d8c58dd..3011691141bf337e7f9fecd31d2f7ec6f4046162 100644
+--- a/src/plugins/sync-plugin.js
++++ b/src/plugins/sync-plugin.js
+@@ -634,7 +634,7 @@ export class ProsemirrorBinding {
+       restoreRelativeSelection(tr, this.beforeTransactionSelection, this)
+       tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y.UndoManager })
+       if (
+-        this.beforeTransactionSelection !== null && this._isLocalCursorInView()
++        this.beforeTransactionSelection !== null && this._isLocalCursorInView() && transaction.origin !== 'remote'
+       ) {
+         tr.scrollIntoView()
+       }
