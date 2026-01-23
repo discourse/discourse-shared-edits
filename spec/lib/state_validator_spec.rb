@@ -346,9 +346,9 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
       update = DiscourseSharedEdits::Yjs.update_from_state(state, "")
 
-      expect {
-        described_class.safe_apply_update(post.id, state, update)
-      }.to raise_error(DiscourseSharedEdits::StateValidator::UnexpectedBlankStateError)
+      expect { described_class.safe_apply_update(post.id, state, update) }.to raise_error(
+        DiscourseSharedEdits::StateValidator::UnexpectedBlankStateError,
+      )
     end
 
     it "allows blank updates when allow flag is true" do
@@ -356,13 +356,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
       update = DiscourseSharedEdits::Yjs.update_from_state(state, "")
 
-      result =
-        described_class.safe_apply_update(
-          post.id,
-          state,
-          update,
-          allow_blank_state: true,
-        )
+      result = described_class.safe_apply_update(post.id, state, update, allow_blank_state: true)
 
       expect(result[:text]).to eq("")
     end

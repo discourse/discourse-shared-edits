@@ -115,7 +115,12 @@ module DiscourseSharedEdits
             report[:current_text] = validation[:text]
             report[:text_length] = validation[:text]&.length
 
-            state_bytes = Base64.decode64(latest.raw).bytesize rescue 0
+            state_bytes =
+              begin
+                Base64.decode64(latest.raw).bytesize
+              rescue StandardError
+                0
+              end
             text_bytes = [validation[:text].to_s.bytesize, 1].max
 
             report[:state_size_bytes] = state_bytes
@@ -123,7 +128,9 @@ module DiscourseSharedEdits
             report[:bloat_ratio] = (state_bytes.to_f / text_bytes).round(2)
 
             if should_snapshot?(latest.raw)
-              report[:warnings] << "State is bloated (#{state_bytes} bytes) - snapshot will occur on next commit"
+              report[
+                :warnings
+              ] << "State is bloated (#{state_bytes} bytes) - snapshot will occur on next commit"
             end
           else
             report[:healthy] = false

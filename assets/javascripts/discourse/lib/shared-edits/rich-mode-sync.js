@@ -91,7 +91,12 @@ export default class RichModeSync {
 
   // Sync Y.Text from xmlFragment
 
-  syncYTextFromXmlFragment(xmlFragment, text, doc, { consumeMarkdown = false } = {}) {
+  syncYTextFromXmlFragment(
+    xmlFragment,
+    text,
+    doc,
+    { consumeMarkdown = false } = {}
+  ) {
     if (!xmlFragment || xmlFragment.length === 0 || !text || !doc) {
       return false;
     }
@@ -103,7 +108,7 @@ export default class RichModeSync {
       // eslint-disable-next-line no-console
       console.warn(
         "[SharedEdits] ProseMirror markdown serialization unavailable, " +
-        "falling back to lossy XML text extraction"
+          "falling back to lossy XML text extraction"
       );
       newText = this.#extractTextFromXmlFragment(xmlFragment);
     }
@@ -116,10 +121,14 @@ export default class RichModeSync {
       xmlFragment?.length > 0 &&
       this.#extractTextFromXmlFragment(xmlFragment).trim().length > 0;
 
-    if (fragmentHasContent && currentTrimmed.length > 0 && newTextTrimmed.length === 0) {
+    if (
+      fragmentHasContent &&
+      currentTrimmed.length > 0 &&
+      newTextTrimmed.length === 0
+    ) {
       // eslint-disable-next-line no-console
       console.error(
-        "[SharedEdits] Rich mode sync produced blank markdown despite populated document. Skipping update.",
+        "[SharedEdits] Rich mode sync produced blank markdown despite populated document. Skipping update."
       );
       this.#onSyncAnomaly?.({
         reason: "empty_serialization",

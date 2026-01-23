@@ -276,7 +276,11 @@ class SharedEditRevision < ActiveRecord::Base
   private_class_method :commit_lock_validity_seconds
 
   def self.with_commit_lock(post_id, &block)
-    DistributedMutex.synchronize(commit_mutex_key(post_id), validity: commit_lock_validity_seconds, &block)
+    DistributedMutex.synchronize(
+      commit_mutex_key(post_id),
+      validity: commit_lock_validity_seconds,
+      &block
+    )
   end
 
   def self.commit_mutex_key(post_id)

@@ -121,8 +121,7 @@ module ::DiscourseSharedEdits
         end
       cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
 
-      allow_blank_state =
-        ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
+      allow_blank_state = ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
 
       version, update =
         SharedEditRevision.revise!(

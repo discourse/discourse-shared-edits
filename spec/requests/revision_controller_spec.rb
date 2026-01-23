@@ -228,11 +228,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       latest_state = latest_state_for(post1)
       blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: blank_update,
-          }
+      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: blank_update }
 
       expect(response.status).to eq(422)
       expect(response.parsed_body["error"]).to eq("blank_state_rejected")

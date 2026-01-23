@@ -132,9 +132,8 @@ export default class NetworkManager {
     let sentUpdates = [];
 
     if (hasDocUpdates) {
-      const { payload, deferredUpdates } = await this.#prepareUpdatePayload(
-        updatesToSend
-      );
+      const { payload, deferredUpdates } =
+        await this.#prepareUpdatePayload(updatesToSend);
       const queuedDuringMerge = this.pendingUpdates;
       this.pendingUpdates = deferredUpdates.concat(queuedDuringMerge);
       sentUpdates = updatesToSend.slice(
@@ -287,7 +286,7 @@ export default class NetworkManager {
 
     // eslint-disable-next-line no-console
     console.warn(
-      "[SharedEdits] Unable to merge shared edit updates; sending sequentially.",
+      "[SharedEdits] Unable to merge shared edit updates; sending sequentially."
     );
     return { payload: updates[0], deferredUpdates: updates.slice(1) };
   }
