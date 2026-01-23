@@ -340,6 +340,32 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       result = described_class.safe_apply_update(post.id, initial_state, update)
       expect(result[:text]).to eq(valid_text)
     end
+
+    it "rejects blank updates when previous text exists and allow flag is false" do
+      SharedEditRevision.init!(post)
+      state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "")
+
+      expect {
+        described_class.safe_apply_update(post.id, state, update)
+      }.to raise_error(DiscourseSharedEdits::StateValidator::UnexpectedBlankStateError)
+    end
+
+    it "allows blank updates when allow flag is true" do
+      SharedEditRevision.init!(post)
+      state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "")
+
+      result =
+        described_class.safe_apply_update(
+          post.id,
+          state,
+          update,
+          allow_blank_state: true,
+        )
+
+      expect(result[:text]).to eq("")
+    end
   end
 
   describe "concurrent edit simulation" do

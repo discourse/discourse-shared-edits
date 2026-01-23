@@ -23,11 +23,13 @@ class SharedEditRevision < ActiveRecord::Base
   end
 
   def self.ensure_will_commit(post_id)
-    key = will_commit_key(post_id)
-    if !Discourse.redis.get(key)
-      delay = commit_delay_seconds
-      Discourse.redis.setex(key, delay * 2, "1")
-      Jobs.enqueue_in(delay.seconds, :commit_shared_revision, post_id: post_id)
+    with_commit_lock(post_id) do
+      key = will_commit_key(post_id)
+      next if Discourse.redis.get(key)
+
+      delay = commit_delay_seconds.seconds
+      Jobs.enqueue_in(delay, :commit_shared_revision, post_id: post_id)
+      Discourse.redis.setex(key, commit_lock_validity_seconds, "1")
     end
   end
 
@@ -263,6 +265,24 @@ class SharedEditRevision < ActiveRecord::Base
       snapshot_state!(post_id, latest)
     end
   end
+
+  def self.clear_commit_schedule(post_id)
+    Discourse.redis.del(will_commit_key(post_id))
+  end
+
+  def self.commit_lock_validity_seconds
+    commit_delay_seconds * 2
+  end
+  private_class_method :commit_lock_validity_seconds
+
+  def self.with_commit_lock(post_id, &block)
+    DistributedMutex.synchronize(commit_mutex_key(post_id), validity: commit_lock_validity_seconds, &block)
+  end
+
+  def self.commit_mutex_key(post_id)
+    "shared_edits_commit_#{post_id}"
+  end
+  private_class_method :commit_mutex_key
   private_class_method :compact_history!
 
   def self.snapshot_state!(post_id, latest)
@@ -332,7 +352,6 @@ class SharedEditRevision < ActiveRecord::Base
       )
     end
   end
-  private_class_method :snapshot_state!
 
   def self.revise!(
     post_id:,
@@ -342,7 +361,8 @@ class SharedEditRevision < ActiveRecord::Base
     cursor: nil,
     awareness: nil,
     post: nil,
-    user_name: nil
+    user_name: nil,
+    allow_blank_state: false
   )
     retries = 0
 
@@ -352,7 +372,12 @@ class SharedEditRevision < ActiveRecord::Base
         raise StandardError, "shared edits not initialized" if !latest
 
         applied =
-          DiscourseSharedEdits::StateValidator.safe_apply_update(post_id, latest.raw, update)
+          DiscourseSharedEdits::StateValidator.safe_apply_update(
+            post_id,
+            latest.raw,
+            update,
+            allow_blank_state: allow_blank_state,
+          )
 
         revision =
           SharedEditRevision.create!(

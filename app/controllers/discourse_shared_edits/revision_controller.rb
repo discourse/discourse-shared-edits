@@ -121,6 +121,9 @@ module ::DiscourseSharedEdits
         end
       cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
 
+      allow_blank_state =
+        ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
+
       version, update =
         SharedEditRevision.revise!(
           post_id: @post.id,
@@ -131,11 +134,21 @@ module ::DiscourseSharedEdits
           awareness: awareness,
           post: @post,
           user_name: current_user.username,
+          allow_blank_state: allow_blank_state,
         )
 
       SharedEditRevision.ensure_will_commit(@post.id)
 
       render json: { version: version, update: update }
+    rescue StateValidator::UnexpectedBlankStateError => e
+      Rails.logger.warn(
+        "[SharedEdits] Rejected blank update for post #{params[:post_id]}: #{e.message}",
+      )
+      render json: {
+               error: "blank_state_rejected",
+               message: I18n.t("shared_edits.errors.blank_state_rejected"),
+             },
+             status: :unprocessable_entity
     rescue StateValidator::StateCorruptionError => e
       Rails.logger.error(
         "[SharedEdits] State corruption in revise for post #{params[:post_id]}: #{e.message}",

@@ -15,6 +15,15 @@ module DiscourseSharedEdits
       end
     end
 
+    class UnexpectedBlankStateError < StandardError
+      attr_reader :post_id
+
+      def initialize(message, post_id:)
+        @post_id = post_id
+        super(message)
+      end
+    end
+
     class << self
       def validate_state(state_b64)
         return { valid: false, text: nil, error: "State is nil" } if state_b64.nil?
@@ -176,7 +185,7 @@ module DiscourseSharedEdits
         { success: false, message: e.message }
       end
 
-      def safe_apply_update(post_id, current_state, update)
+      def safe_apply_update(post_id, current_state, update, allow_blank_state: false)
         update_validation = validate_update(update)
         unless update_validation[:valid]
           Rails.logger.warn(
@@ -187,6 +196,13 @@ module DiscourseSharedEdits
                   post_id: post_id,
                 )
         end
+
+        previous_text =
+          begin
+            DiscourseSharedEdits::Yjs.text_from_state(current_state)
+          rescue StandardError
+            nil
+          end
 
         result = DiscourseSharedEdits::Yjs.apply_update(current_state, update)
 
@@ -206,6 +222,13 @@ module DiscourseSharedEdits
         if text_length > max_length
           raise StateCorruptionError.new(
                   "Post length #{text_length} exceeds maximum allowed #{max_length}",
+                  post_id: post_id,
+                )
+        end
+
+        if result[:text].blank? && previous_text.present? && !allow_blank_state
+          raise UnexpectedBlankStateError.new(
+                  "Blank update rejected because allow_blank_state flag not provided",
                   post_id: post_id,
                 )
         end

@@ -7,6 +7,7 @@ import { cancel, throttle } from "@ember/runloop";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { base64ToUint8Array, uint8ArrayToBase64 } from "./encoding-utils";
+import { triggerYjsLoad } from "./yjs-document";
 
 const THROTTLE_SAVE = 350;
 const MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits";
@@ -97,7 +98,10 @@ export default class NetworkManager {
 
   // Called by the orchestrator service to actually send updates
   // Returns { resynced: true } if a 409 state_recovered triggered a resync
-  async sendUpdates(postId, { cursorPayload, isRichMode, getClientId } = {}) {
+  async sendUpdates(
+    postId,
+    { cursorPayload, isRichMode, getClientId, allowBlankState } = {}
+  ) {
     const updatesToSend = [...this.pendingUpdates];
     const awarenessToSend = this.pendingAwarenessUpdate;
 
@@ -118,16 +122,28 @@ export default class NetworkManager {
       client_id: getClientId?.() || this.messageBus.clientId,
     };
 
+    if (allowBlankState) {
+      data.allow_blank_state = true;
+    }
+
+    this.pendingUpdates = [];
+    this.pendingAwarenessUpdate = null;
+
+    let sentUpdates = [];
+
     if (hasDocUpdates) {
-      // Guard Y.mergeUpdates availability - may not be loaded during rapid open/close
-      const Y = window.SharedEditsYjs?.Y || window.Y;
-      const payload =
-        updatesToSend.length === 1
-          ? updatesToSend[0]
-          : Y?.mergeUpdates
-            ? Y.mergeUpdates(updatesToSend)
-            : updatesToSend[0];
-      data.update = uint8ArrayToBase64(payload);
+      const { payload, deferredUpdates } = await this.#prepareUpdatePayload(
+        updatesToSend
+      );
+      const queuedDuringMerge = this.pendingUpdates;
+      this.pendingUpdates = deferredUpdates.concat(queuedDuringMerge);
+      sentUpdates = updatesToSend.slice(
+        0,
+        updatesToSend.length - deferredUpdates.length
+      );
+      if (payload) {
+        data.update = uint8ArrayToBase64(payload);
+      }
     }
 
     if (hasAwarenessUpdate) {
@@ -138,8 +154,6 @@ export default class NetworkManager {
       data.cursor = cursorPayload;
     }
 
-    this.pendingUpdates = [];
-    this.pendingAwarenessUpdate = null;
     this.ajaxInProgress = true;
 
     try {
@@ -160,8 +174,8 @@ export default class NetworkManager {
       }
 
       // Re-queue failed updates
-      if (updatesToSend.length) {
-        this.pendingUpdates = updatesToSend.concat(this.pendingUpdates);
+      if (sentUpdates.length) {
+        this.pendingUpdates = sentUpdates.concat(this.pendingUpdates);
       }
 
       if (awarenessToSend && !this.pendingAwarenessUpdate) {
@@ -245,5 +259,36 @@ export default class NetworkManager {
     this.ajaxInProgress = false;
     this.inFlightRequest = null;
     this.messageBusLastId = null;
+  }
+
+  async #prepareUpdatePayload(updates) {
+    if (updates.length <= 1) {
+      return { payload: updates[0] || null, deferredUpdates: [] };
+    }
+
+    let merger = window.SharedEditsYjs?.Y || window.Y;
+
+    if (!merger?.mergeUpdates) {
+      try {
+        await triggerYjsLoad();
+        merger = window.SharedEditsYjs?.Y || window.Y;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[SharedEdits] Failed to load Yjs while merging updates:",
+          e
+        );
+      }
+    }
+
+    if (merger?.mergeUpdates) {
+      return { payload: merger.mergeUpdates(updates), deferredUpdates: [] };
+    }
+
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[SharedEdits] Unable to merge shared edit updates; sending sequentially.",
+    );
+    return { payload: updates[0], deferredUpdates: updates.slice(1) };
   }
 }

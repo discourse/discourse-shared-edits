@@ -22,6 +22,7 @@ export default class RichModeSync {
   #syncDebounceId = null;
   #xmlFragmentObserver = null;
   #awarenessUpdateHandler = null;
+  #onSyncAnomaly = null;
 
   // Callbacks
   #onError = null;
@@ -46,9 +47,10 @@ export default class RichModeSync {
   _richModeFailed = false;
   _handlingRichModeFailure = false;
 
-  constructor(context, { onError } = {}) {
+  constructor(context, { onError, onSyncAnomaly } = {}) {
     setOwner(this, getOwner(context));
     this.#onError = onError;
+    this.#onSyncAnomaly = onSyncAnomaly;
   }
 
   // Setup
@@ -107,6 +109,24 @@ export default class RichModeSync {
     }
 
     const currentText = text.toString();
+
+    const newTextTrimmed = newText?.trim() || "";
+    const currentTrimmed = currentText?.trim() || "";
+    const fragmentHasContent =
+      xmlFragment?.length > 0 &&
+      this.#extractTextFromXmlFragment(xmlFragment).trim().length > 0;
+
+    if (fragmentHasContent && currentTrimmed.length > 0 && newTextTrimmed.length === 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        "[SharedEdits] Rich mode sync produced blank markdown despite populated document. Skipping update.",
+      );
+      this.#onSyncAnomaly?.({
+        reason: "empty_serialization",
+        currentLength: currentText.length,
+      });
+      return false;
+    }
 
     // Preserve trailing newline from Y.Text if present
     // ProseMirror/markdown serializers often strip trailing newlines,

@@ -6,6 +6,7 @@
 # Browser-based shared edit simulator for testing Yjs operational transformation
 #
 # Usage: fake_writer POST_ID [OPTIONS]
+#     or fake_writer TOPIC_ID/POST_NUMBER [OPTIONS]
 #
 # Options:
 #   --speed=slow|normal|fast    Typing speed (default: normal)
@@ -22,8 +23,6 @@ Dir.chdir(rails_root)
 require File.expand_path("config/environment", rails_root)
 
 require "playwright"
-
-MARKER = "▌"
 
 PHRASES = [
   "The quick brown fox jumps over the lazy dog. ",
@@ -53,6 +52,7 @@ SPEEDS = {
 def parse_args
   opts = { speed: "normal", headless: true, user: "admin", base_url: "http://localhost:4200" }
   post_id = nil
+  topic_ref = nil
 
   ARGV.each do |arg|
     case arg
@@ -66,12 +66,30 @@ def parse_args
       opts[:base_url] = $1
     when /^--post-id=(\d+)$/
       post_id = $1.to_i
+    when /^--topic-post=(\d+)\/(\d+)$/
+      topic_ref = [$1.to_i, $2.to_i]
+    when /^(\d+)\/(\d+)$/
+      topic_ref = [$1.to_i, $2.to_i]
     when /^\d+$/
       post_id = arg.to_i
     end
   end
 
-  [post_id, opts]
+  [post_id, topic_ref, opts]
+end
+
+def resolve_post_id(post_id, topic_ref)
+  return post_id if post_id
+  return nil unless topic_ref
+
+  topic_id, post_number = topic_ref
+  post = Post.find_by(topic_id: topic_id, post_number: post_number)
+  unless post
+    warn "Post not found for topic #{topic_id} post ##{post_number}"
+    exit 1
+  end
+
+  post.id
 end
 
 def topic_for_post(post_id)
@@ -90,51 +108,73 @@ def topic_for_post(post_id)
   { id: topic.id, slug: topic.slug, title: topic.title }
 end
 
-def type_char(page, char, marker)
-  input = page.query_selector("#reply-control .d-editor-input")
-  return false unless input
+def focus_editor(page)
+  textarea = page.query_selector("#reply-control .d-editor-input")
+  if textarea && textarea.evaluate("el => el && el.tagName === 'TEXTAREA'")
+    textarea.evaluate(
+      <<~JS,
+        (el) => {
+          if (!el) {
+            return;
+          }
+          const value = typeof el.value === "string" ? el.value : "";
+          el.focus();
+          const len = value.length;
+          el.setSelectionRange(len, len);
+        }
+      JS
+    )
+    return :markdown
+  end
 
-  content = input.evaluate("el => el.value")
-  pos = content.index(marker)
-  return false unless pos
+  pm = page.query_selector("#reply-control .ProseMirror")
+  if pm
+    pm.click
+    pm.evaluate(<<~JS)
+      (el) => {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    JS
+    return :rich
+  end
 
-  input.focus
-  page.evaluate(
-    "(pos) => { document.querySelector('#reply-control .d-editor-input').setSelectionRange(pos, pos); }",
-    arg: pos,
-  )
-  page.keyboard.insert_text(char)
-  true
+  nil
 end
 
-def insert_marker(page, marker)
-  input = page.query_selector("#reply-control .d-editor-input")
-  return unless input
+def random_delay(range)
+  return 0 if range.nil?
+  min = range.begin
+  max = range.end
+  rand(min..max) / 1000.0
+end
 
-  content = input.evaluate("el => el.value")
-  return if content.include?(marker)
-
-  pos = content.length
-  js =
-    "(p) => { const el = document.querySelector('#reply-control .d-editor-input'); " \
-      "el.value = el.value.slice(0,p) + '#{marker}' + el.value.slice(p); " \
-      "el.dispatchEvent(new Event('input', {bubbles:true})); }"
-  page.evaluate(js, arg: pos)
-  puts "Inserted cursor marker at position #{pos}"
-  sleep 0.5
+def type_phrase(page, phrase, speed)
+  editor_type = focus_editor(page)
+  raise "Editor not ready" unless editor_type
+  phrase.each_char do |char|
+    page.keyboard.insert_text(char)
+    print char
+    $stdout.flush
+    sleep random_delay(speed[:char_ms])
+  end
 end
 
 # Main
-post_id, opts = parse_args
+post_id, topic_ref, opts = parse_args
+post_id = resolve_post_id(post_id, topic_ref)
 
 unless post_id
-  puts "Usage: fake_writer POST_ID [--speed=slow|normal|fast] [--headless=true|false]"
+  puts "Usage: fake_writer POST_ID or fake_writer TOPIC_ID/POST_NUMBER"
   exit 1
 end
 
 speed = SPEEDS[opts[:speed]] || SPEEDS["normal"]
 topic = topic_for_post(post_id)
-marker = MARKER
 
 puts "=" * 50
 puts "Fake Writer - Shared Edit Simulator"
@@ -182,12 +222,11 @@ Playwright.create(playwright_cli_executable_path: "./node_modules/.bin/playwrigh
     page.wait_for_selector("#reply-control.open", timeout: 10_000)
     puts "Composer ready"
 
-    # Insert marker if needed
-    insert_marker(page, marker)
-
     puts "-" * 50
     puts "Typing... (Ctrl+C to stop)"
     puts "-" * 50
+
+    focus_editor(page)
 
     # Main typing loop
     idx = 0
@@ -195,15 +234,10 @@ Playwright.create(playwright_cli_executable_path: "./node_modules/.bin/playwrigh
       phrase = PHRASES[idx % PHRASES.length]
       idx += 1
 
-      phrase.each_char do |char|
-        type_char(page, char, marker)
-        print char
-        $stdout.flush
-        sleep(rand(speed[:char_ms]) / 1000.0)
-      end
-
+      type_phrase(page, phrase, speed)
       puts
-      sleep(rand(speed[:phrase_ms]) / 1000.0)
+      $stdout.flush
+      sleep(random_delay(speed[:phrase_ms]))
     end
   rescue Interrupt
     puts "\n\nStopped by user."

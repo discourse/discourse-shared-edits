@@ -224,6 +224,35 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(post1.raw[0..3]).to eq("1234")
     end
 
+    it "rejects blanking a post without explicit allow flag" do
+      latest_state = latest_state_for(post1)
+      blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            update: blank_update,
+          }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to eq("blank_state_rejected")
+    end
+
+    it "allows blanking a post when allow flag is provided" do
+      latest_state = latest_state_for(post1)
+      blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            update: blank_update,
+            allow_blank_state: true,
+          }
+
+      expect(response.status).to eq(200)
+      expect(response.parsed_body["version"]).to eq(2)
+    end
+
     it "requires client_id parameter" do
       put "/shared_edits/p/#{post1.id}", params: { update: "test" }
       expect(response.status).to eq(400)

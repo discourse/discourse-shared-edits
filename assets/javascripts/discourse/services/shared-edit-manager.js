@@ -198,6 +198,13 @@ export default class SharedEditManager extends Service {
     }
   };
 
+  #handleSyncAnomaly = () => {
+    if (this.#closing) {
+      return;
+    }
+    this.#handleResync();
+  };
+
   #handleResync = async () => {
     if (this.#closing) {
       return;
@@ -443,6 +450,7 @@ export default class SharedEditManager extends Service {
             this.#yjsDocument?.text
           ),
           getClientId: () => this.messageBus.clientId,
+          allowBlankState: this.#shouldAllowBlankState(),
         }
       );
 
@@ -466,6 +474,7 @@ export default class SharedEditManager extends Service {
 
   syncFromComposerValue(nextValue) {
     if (
+      this.isRichMode ||
       !this.#composerReady ||
       !this.#yjsDocument?.text ||
       !this.#yjsDocument?.doc ||
@@ -504,6 +513,7 @@ export default class SharedEditManager extends Service {
     if (this.isRichMode) {
       this.#richModeSync = new RichModeSync(this, {
         onError: this.#handleRichModeError,
+        onSyncAnomaly: this.#handleSyncAnomaly,
       });
     } else {
       this.#markdownSync = new MarkdownSync(this);
@@ -640,6 +650,7 @@ export default class SharedEditManager extends Service {
           this.#yjsDocument?.text
         ),
         getClientId: () => this.messageBus.clientId,
+        allowBlankState: this.#shouldAllowBlankState(),
       });
     } catch (e) {
       // Errors are handled in NetworkManager, but log for debugging
@@ -690,6 +701,15 @@ export default class SharedEditManager extends Service {
     }
 
     this.syncFromComposerValue(this.composer.model.reply || "");
+  }
+
+  #shouldAllowBlankState() {
+    const text = this.#yjsDocument?.text;
+    if (!text || typeof text.toString !== "function") {
+      return false;
+    }
+
+    return text.toString().length === 0;
   }
 
   async #waitForTextarea(maxWait = 2000) {
