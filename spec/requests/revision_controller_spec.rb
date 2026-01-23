@@ -350,7 +350,10 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       revision = SharedEditRevision.where(post_id: post1.id).first
       revision.update_column(:raw, Base64.strict_encode64("corrupted data"))
 
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: "some_update" }
+      # Use a valid base64 update that will pass input validation but fail
+      # when Yjs tries to apply it to the corrupted state
+      valid_update = Base64.strict_encode64("some binary data")
+      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: valid_update }
 
       expect(response.status).to eq(409)
       expect(response.parsed_body["error"]).to eq("state_recovered")

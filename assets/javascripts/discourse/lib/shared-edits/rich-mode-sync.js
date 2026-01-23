@@ -113,6 +113,19 @@ export default class RichModeSync {
       newText = this.#extractTextFromXmlFragment(xmlFragment);
     }
 
+    if (typeof newText !== "string") {
+      // eslint-disable-next-line no-console
+      console.error(
+        "[SharedEdits] Rich mode sync failed: newText is not a string",
+        typeof newText
+      );
+      this.#onSyncAnomaly?.({
+        reason: "invalid_newtext_type",
+        type: typeof newText,
+      });
+      return false;
+    }
+
     const currentText = text.toString();
 
     const newTextTrimmed = newText?.trim() || "";

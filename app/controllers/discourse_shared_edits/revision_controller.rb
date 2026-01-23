@@ -25,43 +25,56 @@ module ::DiscourseSharedEdits
     def latest
       guardian.ensure_can_edit!(@post)
 
-      revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
-      raise Discourse::NotFound if revision.nil?
+      SharedEditRevision.transaction do
+        revision = SharedEditRevision.where(post_id: @post.id).lock.order("version desc").first
+        raise Discourse::NotFound if revision.nil?
 
-      message_bus_last_id = MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
+        message_bus_last_id = MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
 
-      begin
-        if revision.raw.blank?
-          raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
-                  "Latest revision has empty state",
-                  post_id: @post.id,
-                )
-        end
+        begin
+          if revision.raw.blank?
+            raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
+                    "Latest revision has empty state",
+                    post_id: @post.id,
+                  )
+          end
 
-        render json: {
-                 raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
-                 version: revision.version,
-                 state: revision.raw,
-                 message_bus_last_id: message_bus_last_id,
-               }
-      rescue StandardError => e
-        Rails.logger.warn(
-          "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
-        )
-        recovery = StateValidator.recover_from_post_raw(@post.id, force: true)
-        if recovery[:success]
-          revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
           render json: {
                    raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
                    version: revision.version,
                    state: revision.raw,
                    message_bus_last_id: message_bus_last_id,
                  }
-        else
-          raise Discourse::InvalidAccess.new(
-                  I18n.t("shared_edits.errors.state_corrupted"),
-                  custom_message: "shared_edits.errors.state_corrupted",
-                )
+        rescue StandardError => e
+          Rails.logger.warn(
+            "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
+          )
+          recovery = StateValidator.recover_from_post_raw(@post.id, force: true)
+          if recovery[:success]
+            revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
+
+            @post.publish_message!(
+              SharedEditRevision.message_bus_channel(@post.id),
+              { action: "resync", version: recovery[:new_version] },
+              max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
+              max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
+            )
+
+            message_bus_last_id =
+              MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
+
+            render json: {
+                     raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
+                     version: revision.version,
+                     state: revision.raw,
+                     message_bus_last_id: message_bus_last_id,
+                   }
+          else
+            raise Discourse::InvalidAccess.new(
+                    I18n.t("shared_edits.errors.state_corrupted"),
+                    custom_message: "shared_edits.errors.state_corrupted",
+                  )
+          end
         end
       end
     end
@@ -148,6 +161,15 @@ module ::DiscourseSharedEdits
                message: I18n.t("shared_edits.errors.blank_state_rejected"),
              },
              status: :unprocessable_entity
+    rescue StateValidator::InvalidUpdateError => e
+      Rails.logger.warn(
+        "[SharedEdits] Invalid update payload for post #{params[:post_id]}: #{e.message}",
+      )
+      render json: {
+               error: "invalid_update",
+               message: I18n.t("shared_edits.errors.invalid_update"),
+             },
+             status: :bad_request
     rescue StateValidator::StateCorruptionError => e
       Rails.logger.error(
         "[SharedEdits] State corruption in revise for post #{params[:post_id]}: #{e.message}",

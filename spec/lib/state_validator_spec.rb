@@ -301,19 +301,19 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       expect(result[:state]).to be_present
     end
 
-    it "raises StateCorruptionError for invalid update" do
+    it "raises InvalidUpdateError for invalid update" do
       initial_state = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
 
       expect {
         described_class.safe_apply_update(post.id, initial_state, "not-valid-base64!!!")
-      }.to raise_error(DiscourseSharedEdits::StateValidator::StateCorruptionError)
+      }.to raise_error(DiscourseSharedEdits::StateValidator::InvalidUpdateError)
     end
 
-    it "raises StateCorruptionError for nil update" do
+    it "raises InvalidUpdateError for nil update" do
       initial_state = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
 
       expect { described_class.safe_apply_update(post.id, initial_state, nil) }.to raise_error(
-        DiscourseSharedEdits::StateValidator::StateCorruptionError,
+        DiscourseSharedEdits::StateValidator::InvalidUpdateError,
       )
     end
 

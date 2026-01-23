@@ -38,7 +38,7 @@ class SharedEditRevision < ActiveRecord::Base
   end
 
   def self.last_revision_id_for_post(post)
-    PostRevision.where(post: post).limit(1).order("number desc").pluck(:id).first || -1
+    PostRevision.where(post: post).limit(1).order("number desc").pluck(:id).first
   end
 
   def self.toggle_shared_edits!(post_id, enable)
@@ -244,6 +244,7 @@ class SharedEditRevision < ActiveRecord::Base
       .where(post_id: post_id)
       .where("updated_at < ?", MAX_HISTORY_AGE.ago)
       .where.not(id: keep_raw_ids.to_a)
+      .in_batches
       .delete_all
 
     keep_ids =
@@ -256,7 +257,7 @@ class SharedEditRevision < ActiveRecord::Base
       )
 
     all_keep_ids = (keep_ids + keep_raw_ids).to_a
-    SharedEditRevision.where(post_id: post_id).where.not(id: all_keep_ids).delete_all
+    SharedEditRevision.where(post_id: post_id).where.not(id: all_keep_ids).in_batches.delete_all
 
     # Check if snapshotting is needed to reduce state bloat
     # Re-fetch latest since it may have been modified above

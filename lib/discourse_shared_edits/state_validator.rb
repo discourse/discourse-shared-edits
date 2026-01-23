@@ -3,6 +3,8 @@
 module DiscourseSharedEdits
   module StateValidator
     SNAPSHOT_THRESHOLD_BYTES = 100.kilobytes
+    RECOVERY_RATE_LIMIT_SECONDS = 30
+    MAX_RECOVERY_ATTEMPTS_PER_HOUR = 10
 
     class StateCorruptionError < StandardError
       attr_reader :post_id, :version, :recovery_attempted
@@ -16,6 +18,15 @@ module DiscourseSharedEdits
     end
 
     class UnexpectedBlankStateError < StandardError
+      attr_reader :post_id
+
+      def initialize(message, post_id:)
+        @post_id = post_id
+        super(message)
+      end
+    end
+
+    class InvalidUpdateError < StandardError
       attr_reader :post_id
 
       def initialize(message, post_id:)
@@ -150,6 +161,14 @@ module DiscourseSharedEdits
         post = Post.find_by(id: post_id)
         return { success: false, message: "Post not found" } if post.nil?
 
+        rate_limit_result = check_recovery_rate_limit(post_id)
+        unless rate_limit_result[:allowed]
+          Rails.logger.warn(
+            "[SharedEdits] Recovery rate limited for post #{post_id}: #{rate_limit_result[:message]}",
+          )
+          return { success: false, message: rate_limit_result[:message] }
+        end
+
         unless force
           health = health_check(post_id)
           if health[:healthy]
@@ -198,7 +217,7 @@ module DiscourseSharedEdits
           Rails.logger.warn(
             "[SharedEdits] Invalid update for post #{post_id}: #{update_validation[:error]}",
           )
-          raise StateCorruptionError.new(
+          raise InvalidUpdateError.new(
                   "Invalid update: #{update_validation[:error]}",
                   post_id: post_id,
                 )
@@ -241,6 +260,44 @@ module DiscourseSharedEdits
         end
 
         result
+      end
+
+      private
+
+      def check_recovery_rate_limit(post_id)
+        cooldown_key = "shared_edits_recovery_cooldown_#{post_id}"
+        counter_key = "shared_edits_recovery_count_#{post_id}"
+
+        if Discourse.redis.exists?(cooldown_key)
+          ttl = Discourse.redis.ttl(cooldown_key)
+          return(
+            {
+              allowed: false,
+              message: "Recovery rate limited. Please wait #{ttl} seconds before trying again.",
+            }
+          )
+        end
+
+        count = Discourse.redis.get(counter_key).to_i
+        if count >= MAX_RECOVERY_ATTEMPTS_PER_HOUR
+          ttl = Discourse.redis.ttl(counter_key)
+          return(
+            {
+              allowed: false,
+              message:
+                "Too many recovery attempts (#{MAX_RECOVERY_ATTEMPTS_PER_HOUR}/hour). " \
+                  "Please wait #{ttl} seconds.",
+            }
+          )
+        end
+
+        Discourse.redis.setex(cooldown_key, RECOVERY_RATE_LIMIT_SECONDS, "1")
+        Discourse.redis.multi do |multi|
+          multi.incr(counter_key)
+          multi.expire(counter_key, 1.hour.to_i)
+        end
+
+        { allowed: true }
       end
     end
   end
