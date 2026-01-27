@@ -82,8 +82,15 @@ export function getMarkdownFromView({ consumeCapture = false } = {}) {
     if (view && !view.isDestroyed) {
       try {
         const result = convertToMarkdownFn(view.state.doc);
-        // Successfully got markdown from live view - clear any stale captured value
-        if (capturedMarkdown !== null) {
+        // Successfully got markdown from live view - but DON'T clear captured markdown
+        // if we're in recovery mode. The captured markdown may be more up-to-date
+        // than the live view during resync when ProseMirror binding is broken.
+        // Only clear if the live result is non-empty and captures are not being consumed.
+        if (capturedMarkdown !== null && !consumeCapture && result) {
+          // If captured markdown has more content, prefer it
+          if (capturedMarkdown.length > result.length) {
+            return capturedMarkdown;
+          }
           capturedMarkdown = null;
         }
         return result;

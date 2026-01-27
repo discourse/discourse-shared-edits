@@ -47,6 +47,16 @@ module DiscourseSharedEdits
       end
     end
 
+    class StateDivergedError < StandardError
+      attr_reader :post_id, :missing_update
+
+      def initialize(message, post_id:, missing_update:)
+        @post_id = post_id
+        @missing_update = missing_update
+        super(message)
+      end
+    end
+
     class << self
       def validate_state(state_b64)
         return { valid: false, text: nil, error: "State is nil" } if state_b64.nil?
@@ -107,6 +117,43 @@ module DiscourseSharedEdits
           { valid: true, error: nil }
         rescue ArgumentError => e
           { valid: false, error: "Invalid base64: #{e.message}" }
+        end
+      end
+
+      def validate_state_vector(state_vector_b64)
+        return { valid: false, error: "State vector is nil" } if state_vector_b64.nil?
+        return { valid: false, error: "State vector is empty" } if state_vector_b64.empty?
+
+        begin
+          decoded = Base64.strict_decode64(state_vector_b64)
+          return { valid: false, error: "Decoded state vector is empty" } if decoded.empty?
+          { valid: true, error: nil }
+        rescue ArgumentError => e
+          { valid: false, error: "Invalid base64: #{e.message}" }
+        end
+      end
+
+      def validate_client_state_vector(server_state_b64, client_sv_b64)
+        sv_validation = validate_state_vector(client_sv_b64)
+        return sv_validation unless sv_validation[:valid]
+
+        begin
+          server_sv = DiscourseSharedEdits::Yjs.get_state_vector(server_state_b64)
+          client_sv = Base64.strict_decode64(client_sv_b64).bytes
+
+          result = DiscourseSharedEdits::Yjs.compare_state_vectors(client_sv, server_sv)
+
+          if result[:valid]
+            { valid: true }
+          else
+            missing_update =
+              DiscourseSharedEdits::Yjs.get_missing_update(server_state_b64, client_sv)
+            { valid: false, missing_update: missing_update }
+          end
+        rescue MiniRacer::RuntimeError, MiniRacer::ParseError => e
+          { valid: false, error: "Yjs state vector comparison failed: #{e.message}" }
+        rescue StandardError => e
+          { valid: false, error: "Unexpected error: #{e.message}" }
         end
       end
 
@@ -172,16 +219,18 @@ module DiscourseSharedEdits
         report
       end
 
-      def recover_from_post_raw(post_id, force: false)
+      def recover_from_post_raw(post_id, force: false, skip_rate_limit: false)
         post = Post.find_by(id: post_id)
         return { success: false, message: "Post not found" } if post.nil?
 
-        rate_limit_result = check_recovery_rate_limit(post_id)
-        unless rate_limit_result[:allowed]
-          Rails.logger.warn(
-            "[SharedEdits] Recovery rate limited for post #{post_id}: #{rate_limit_result[:message]}",
-          )
-          return { success: false, message: rate_limit_result[:message] }
+        unless skip_rate_limit
+          rate_limit_result = check_recovery_rate_limit(post_id)
+          unless rate_limit_result[:allowed]
+            Rails.logger.warn(
+              "[SharedEdits] Recovery rate limited for post #{post_id}: #{rate_limit_result[:message]}",
+            )
+            return { success: false, message: rate_limit_result[:message] }
+          end
         end
 
         unless force
@@ -219,6 +268,62 @@ module DiscourseSharedEdits
           Rails.logger.info("[SharedEdits] Recovered state for post #{post_id} from post.raw")
 
           { success: true, message: "State recovered from post.raw", new_version: revision.version }
+        end
+      rescue ActiveRecord::RecordInvalid => e
+        { success: false, message: "Database error: #{e.message}" }
+      rescue StateCorruptionError => e
+        { success: false, message: e.message }
+      end
+
+      def recover_from_text(post_id, text)
+        post = Post.find_by(id: post_id)
+        return { success: false, message: "Post not found" } if post.nil?
+
+        max_length = SiteSetting.max_post_length
+        if text.length > max_length
+          return { success: false, message: "Text exceeds maximum length" }
+        end
+
+        rate_limit_result = check_recovery_rate_limit(post_id)
+        unless rate_limit_result[:allowed]
+          Rails.logger.warn(
+            "[SharedEdits] Recovery rate limited for post #{post_id}: #{rate_limit_result[:message]}",
+          )
+          return { success: false, message: rate_limit_result[:message] }
+        end
+
+        SharedEditRevision.transaction do
+          SharedEditRevision.where(post_id: post_id).delete_all
+
+          initial_state = DiscourseSharedEdits::Yjs.state_from_text(text)
+
+          revision =
+            SharedEditRevision.create!(
+              post_id: post_id,
+              client_id: "recovery",
+              user_id: Discourse.system_user.id,
+              version: 1,
+              revision: "",
+              raw: initial_state[:state],
+              post_revision_id: nil,
+            )
+
+          validation = validate_state(revision.raw)
+          unless validation[:valid]
+            raise StateCorruptionError.new(
+                    "Recovery failed: generated state is invalid",
+                    post_id: post_id,
+                    recovery_attempted: true,
+                  )
+          end
+
+          Rails.logger.info("[SharedEdits] Recovered state for post #{post_id} from client text")
+
+          {
+            success: true,
+            message: "State recovered from client text",
+            new_version: revision.version,
+          }
         end
       rescue ActiveRecord::RecordInvalid => e
         { success: false, message: "Database error: #{e.message}" }

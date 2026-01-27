@@ -49,7 +49,8 @@ module ::DiscourseSharedEdits
           Rails.logger.warn(
             "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
           )
-          recovery = StateValidator.recover_from_post_raw(@post.id, force: true)
+          recovery =
+            StateValidator.recover_from_post_raw(@post.id, force: true, skip_rate_limit: true)
           if recovery[:success]
             revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
 
@@ -93,6 +94,31 @@ module ::DiscourseSharedEdits
 
       guardian.ensure_can_edit!(@post)
 
+      if params[:recovery_text].present?
+        RateLimiter.new(current_user, "shared-edit-recover-#{@post.id}", 20, 1.minute).performed!
+        recovery = StateValidator.recover_from_text(@post.id, params[:recovery_text])
+        if recovery[:success]
+          @post.publish_message!(
+            SharedEditRevision.message_bus_channel(@post.id),
+            { action: "resync", version: recovery[:new_version] },
+            max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
+            max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
+          )
+          render json: {
+                   error: "state_recovered_from_client",
+                   version: recovery[:new_version],
+                 },
+                 status: :ok
+        else
+          render json: {
+                   error: "recovery_failed",
+                   message: recovery[:message],
+                 },
+                 status: :unprocessable_entity
+        end
+        return
+      end
+
       RateLimiter.new(current_user, "shared-edit-revise-#{@post.id}", 120, 1.minute).performed!
 
       awareness = params[:awareness]
@@ -135,6 +161,27 @@ module ::DiscourseSharedEdits
       cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
 
       allow_blank_state = ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
+
+      if params[:state_vector].present?
+        latest = SharedEditRevision.where(post_id: @post.id).order("version desc").first
+        if latest&.raw.present?
+          validation =
+            StateValidator.validate_client_state_vector(latest.raw, params[:state_vector])
+          unless validation[:valid]
+            if validation[:missing_update].present?
+              raise StateValidator::StateDivergedError.new(
+                      "Client state vector is behind server",
+                      post_id: @post.id,
+                      missing_update: validation[:missing_update],
+                    )
+            else
+              Rails.logger.warn(
+                "[SharedEdits] State vector validation failed for post #{@post.id}: #{validation[:error]}",
+              )
+            end
+          end
+        end
+      end
 
       version, update =
         SharedEditRevision.revise!(
@@ -187,25 +234,19 @@ module ::DiscourseSharedEdits
              },
              status: :unprocessable_entity
     rescue StateValidator::StateCorruptionError => e
-      Rails.logger.error(
+      Rails.logger.warn(
         "[SharedEdits] State corruption in revise for post #{params[:post_id]}: #{e.message}",
       )
 
-      recovery = StateValidator.recover_from_post_raw(params[:post_id].to_i)
-      if recovery[:success]
-        render json: {
-                 error: "state_recovered",
-                 message: I18n.t("shared_edits.errors.state_recovered"),
-                 recovered_version: recovery[:new_version],
-               },
-               status: :conflict
-      else
-        render json: {
-                 error: "state_corrupted",
-                 message: I18n.t("shared_edits.errors.state_corrupted"),
-               },
-               status: :unprocessable_entity
-      end
+      render json: {
+               error: "needs_recovery_text",
+               message: I18n.t("shared_edits.errors.needs_recovery_text"),
+             },
+             status: :conflict
+    rescue StateValidator::StateDivergedError => e
+      Rails.logger.info("[SharedEdits] State diverged for post #{params[:post_id]}: #{e.message}")
+
+      render json: { error: "state_diverged", missing_update: e.missing_update }, status: :conflict
     end
 
     def health
@@ -219,7 +260,13 @@ module ::DiscourseSharedEdits
     def recover
       guardian.ensure_can_toggle_shared_edits!
 
-      result = StateValidator.recover_from_post_raw(@post.id, force: params[:force] == "true")
+      # Staff-only endpoint, skip rate limiting since it's already protected by guardian
+      result =
+        StateValidator.recover_from_post_raw(
+          @post.id,
+          force: params[:force] == "true",
+          skip_rate_limit: true,
+        )
 
       if result[:success]
         @post.publish_message!(

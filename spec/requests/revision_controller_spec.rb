@@ -345,7 +345,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(post1.raw[0..3]).to eq("wxyz")
     end
 
-    it "handles corrupted state with automatic recovery" do
+    it "handles corrupted state by requesting recovery text from client" do
       # Corrupt the state
       revision = SharedEditRevision.where(post_id: post1.id).first
       revision.update_column(:raw, Base64.strict_encode64("corrupted data"))
@@ -355,9 +355,109 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       valid_update = Base64.strict_encode64("some binary data")
       put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: valid_update }
 
+      # Server now asks for recovery text instead of auto-recovering
       expect(response.status).to eq(409)
-      expect(response.parsed_body["error"]).to eq("state_recovered")
-      expect(response.parsed_body["recovered_version"]).to eq(1)
+      expect(response.parsed_body["error"]).to eq("needs_recovery_text")
+    end
+
+    describe "state vector validation" do
+      it "accepts updates when client state vector matches server" do
+        latest_state = latest_state_for(post1)
+        client_sv = DiscourseSharedEdits::Yjs.get_state_vector(latest_state)
+        client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
+        new_text = "Updated content"
+
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+              state_vector: client_sv_b64,
+            }
+
+        expect(response.status).to eq(200)
+        expect(response.parsed_body["version"]).to eq(2)
+      end
+
+      it "returns 409 with missing_update when client is behind server" do
+        latest_state = latest_state_for(post1)
+        client_sv = DiscourseSharedEdits::Yjs.get_state_vector(latest_state)
+        client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
+
+        update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Server edit")
+        SharedEditRevision.revise!(
+          post_id: post1.id,
+          user_id: admin.id,
+          client_id: "other_client",
+          update: update,
+        )
+
+        new_text = "Client edit based on stale state"
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+              state_vector: client_sv_b64,
+            }
+
+        expect(response.status).to eq(409)
+        expect(response.parsed_body["error"]).to eq("state_diverged")
+        expect(response.parsed_body["missing_update"]).to be_present
+
+        applied =
+          DiscourseSharedEdits::Yjs.apply_update(
+            latest_state,
+            response.parsed_body["missing_update"],
+          )
+        expect(applied[:text]).to eq("Server edit")
+      end
+
+      it "accepts updates without state_vector parameter" do
+        latest_state = latest_state_for(post1)
+        new_text = "Updated without state vector"
+
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+            }
+
+        expect(response.status).to eq(200)
+      end
+
+      it "accepts updates when client is ahead of server" do
+        latest_state = latest_state_for(post1)
+        update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Intermediate edit")
+        client_state = DiscourseSharedEdits::Yjs.apply_update(latest_state, update)[:state]
+        client_sv = DiscourseSharedEdits::Yjs.get_state_vector(client_state)
+        client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
+
+        new_text = "Edit from client ahead of server"
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+              state_vector: client_sv_b64,
+            }
+
+        expect(response.status).to eq(200)
+      end
+    end
+
+    it "recovers state when client provides recovery text" do
+      # Corrupt the state
+      revision = SharedEditRevision.where(post_id: post1.id).first
+      revision.update_column(:raw, Base64.strict_encode64("corrupted data"))
+
+      # Client sends recovery text
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            recovery_text: "recovered content from client",
+          }
+
+      expect(response.status).to eq(200)
+      expect(response.parsed_body["error"]).to eq("state_recovered_from_client")
+      expect(response.parsed_body["version"]).to be_present
     end
 
     it "returns 404 when shared edits not enabled on post" do

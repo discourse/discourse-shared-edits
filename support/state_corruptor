@@ -1,0 +1,287 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# rubocop:disable Discourse/Plugins/NamespaceConstants, Discourse/Plugins/NamespaceMethods
+
+# State corruptor for testing shared edits corruption recovery mechanisms
+#
+# Usage: state_corruptor POST_ID [OPTIONS]
+#     or state_corruptor TOPIC_ID/POST_NUMBER [OPTIONS]
+#
+# Options:
+#   --help, -h              Show this help message and exit
+#   --mode=MODE             Corruption mode (default: invalid_yjs)
+#                           Modes: invalid_base64, invalid_yjs, empty, nil, truncated
+#   --trigger-commit        Immediately run commit job to test failure path
+#   --show-health           Show health check before/after corruption
+
+rails_root = File.expand_path("../../../..", __FILE__)
+ENV["RAILS_ENV"] ||= "development"
+# rubocop:disable Discourse/NoChdir
+Dir.chdir(rails_root)
+require File.expand_path("config/environment", rails_root)
+
+CORRUPTION_MODES = {
+  "invalid_base64" => {
+    description: "Invalid base64 string",
+    failure: "Base64.strict_decode64 raises ArgumentError",
+    generator: -> { "!!!not-valid-base64!!!" },
+  },
+  "invalid_yjs" => {
+    description: "Valid base64, invalid Yjs data",
+    failure: "Yjs.text_from_state raises MiniRacer::RuntimeError",
+    generator: -> { Base64.strict_encode64("this is not valid yjs binary data") },
+  },
+  "empty" => {
+    description: "Empty string",
+    failure: "Fails 'State is empty' check",
+    generator: -> { "" },
+  },
+  "nil" => {
+    description: "Nil value",
+    failure: "Fails 'State is nil' check",
+    generator: -> { nil },
+  },
+  "truncated" => {
+    description: "First 10 bytes only of valid state",
+    failure: "Yjs decode fails unpredictably",
+    generator: ->(current_raw) do
+      return Base64.strict_encode64("truncated") if current_raw.blank?
+      decoded = Base64.strict_decode64(current_raw)
+      Base64.strict_encode64(decoded[0, 10] || "")
+    end,
+  },
+}.freeze
+
+def show_help
+  puts <<~HELP
+    State Corruptor - Shared Edits Testing Tool
+
+    Corrupts Yjs revision state to test corruption recovery mechanisms.
+
+    Usage:
+      state_corruptor POST_ID [OPTIONS]
+      state_corruptor TOPIC_ID/POST_NUMBER [OPTIONS]
+
+    Arguments:
+      POST_ID               The ID of the post to corrupt
+      TOPIC_ID/POST_NUMBER  Topic ID and post number (e.g., 123/1 for first post)
+
+    Options:
+      --help, -h              Show this help message and exit
+      --mode=MODE             Corruption mode (default: invalid_yjs)
+      --trigger-commit        Immediately run commit job to test failure path
+      --show-health           Show health check before/after corruption
+
+    Corruption Modes:
+      invalid_base64  - Invalid base64 string (ArgumentError on decode)
+      invalid_yjs     - Valid base64, invalid Yjs (MiniRacer::RuntimeError)
+      empty           - Empty string (fails "State is empty" check)
+      nil             - Nil value (fails "State is nil" check)
+      truncated       - First 10 bytes only (unpredictable Yjs failure)
+
+    Examples:
+      state_corruptor 42                                # Corrupt post 42 with invalid_yjs
+      state_corruptor 10/1 --mode=invalid_base64        # Corrupt first post in topic 10
+      state_corruptor 42 --show-health --trigger-commit # Show health and trigger commit
+  HELP
+  exit 0
+end
+
+def parse_args
+  opts = { mode: "invalid_yjs", trigger_commit: false, show_health: false }
+  post_id = nil
+  topic_ref = nil
+
+  ARGV.each do |arg|
+    case arg
+    when "--help", "-h"
+      show_help
+    when /^--mode=(.+)$/
+      opts[:mode] = $1
+    when "--trigger-commit"
+      opts[:trigger_commit] = true
+    when "--show-health"
+      opts[:show_health] = true
+    when /^--post-id=(\d+)$/
+      post_id = $1.to_i
+    when %r{^--topic-post=(\d+)/(\d+)$}
+      topic_ref = [$1.to_i, $2.to_i]
+    when %r{^(\d+)/(\d+)$}
+      topic_ref = [$1.to_i, $2.to_i]
+    when /^\d+$/
+      post_id = arg.to_i
+    end
+  end
+
+  [post_id, topic_ref, opts]
+end
+
+def resolve_post_id(post_id, topic_ref)
+  return post_id if post_id
+  return nil unless topic_ref
+
+  topic_id, post_number = topic_ref
+  post = Post.find_by(topic_id: topic_id, post_number: post_number)
+  unless post
+    warn "Post not found for topic #{topic_id} post ##{post_number}"
+    exit 1
+  end
+
+  post.id
+end
+
+def validate_post(post_id)
+  post = Post.find_by(id: post_id)
+  unless post
+    warn "Post #{post_id} not found"
+    exit 1
+  end
+
+  unless post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
+    warn "Shared edits not enabled on post #{post_id}"
+    warn "Enable with: SharedEditRevision.toggle_shared_edits!(#{post_id}, true)"
+    exit 1
+  end
+
+  latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+  unless latest
+    warn "No shared edit revisions found for post #{post_id}"
+    exit 1
+  end
+
+  [post, latest]
+end
+
+def print_health(post_id, label)
+  puts "\n#{label} Health Check:"
+  puts "-" * 40
+  report = DiscourseSharedEdits::StateValidator.health_check(post_id)
+
+  puts "  Healthy: #{report[:healthy] ? "YES" : "NO"}"
+  puts "  State: #{report[:state]}"
+  puts "  Revision count: #{report[:revision_count]}" if report[:revision_count]
+  puts "  Version range: #{report[:version_range].join(' -> ')}" if report[:version_range]
+
+  if report[:text_length]
+    puts "  Text length: #{report[:text_length]} chars"
+    puts "  State size: #{report[:state_size_bytes]} bytes"
+    puts "  Bloat ratio: #{report[:bloat_ratio]}x"
+  end
+
+  if report[:errors].any?
+    puts "  Errors:"
+    report[:errors].each { |e| puts "    - #{e}" }
+  end
+
+  if report[:warnings].any?
+    puts "  Warnings:"
+    report[:warnings].each { |w| puts "    - #{w}" }
+  end
+
+  report
+end
+
+def corrupt_state(post_id, latest, mode_config, mode_name)
+  generator = mode_config[:generator]
+
+  corrupt_value =
+    if generator.arity == 1
+      generator.call(latest.raw)
+    else
+      generator.call
+    end
+
+  puts "\nCorrupting state..."
+  puts "  Mode: #{mode_name}"
+  puts "  Description: #{mode_config[:description]}"
+  puts "  Expected failure: #{mode_config[:failure]}"
+  puts "  Version being corrupted: #{latest.version}"
+
+  if corrupt_value.nil?
+    latest.update_column(:raw, nil)
+  else
+    latest.update_column(:raw, corrupt_value)
+  end
+
+  puts "  Done! State corrupted."
+end
+
+def trigger_commit_job(post_id)
+  puts "\nTriggering CommitSharedRevision job..."
+  puts "-" * 40
+
+  begin
+    Jobs::CommitSharedRevision.new.execute(post_id: post_id)
+    puts "  Job completed (check Rails logs for warnings)"
+  rescue StandardError => e
+    puts "  Job raised error: #{e.class} - #{e.message}"
+  end
+end
+
+def print_testing_instructions(post_id, post)
+  topic = post.topic
+  puts "\n" + "=" * 50
+  puts "Testing Instructions"
+  puts "=" * 50
+  puts <<~INSTRUCTIONS
+
+    1. Open post in browser:
+       /t/#{topic.slug}/#{topic.id}
+
+    2. Click the shared edit button to start editing
+
+    3. Expected behavior:
+       - Client should receive 409 with state_recovered or state_corrupted
+       - Rails logs should show [SharedEdits] corruption messages
+       - Check with: tail -f log/development.log | grep SharedEdits
+
+    4. Verify recovery:
+       - Run: support/state_corruptor #{post_id} --show-health
+       - Or in Rails console:
+         DiscourseSharedEdits::StateValidator.health_check(#{post_id})
+
+    5. Manual recovery (if needed):
+       DiscourseSharedEdits::StateValidator.recover_from_post_raw(#{post_id}, force: true)
+
+  INSTRUCTIONS
+end
+
+# Main
+post_id, topic_ref, opts = parse_args
+post_id = resolve_post_id(post_id, topic_ref)
+
+unless post_id
+  puts "Usage: state_corruptor POST_ID or state_corruptor TOPIC_ID/POST_NUMBER"
+  puts "Run 'state_corruptor --help' for more options."
+  exit 1
+end
+
+mode_config = CORRUPTION_MODES[opts[:mode]]
+unless mode_config
+  warn "Unknown corruption mode: #{opts[:mode]}"
+  warn "Available modes: #{CORRUPTION_MODES.keys.join(", ")}"
+  exit 1
+end
+
+post, latest = validate_post(post_id)
+
+puts "=" * 50
+puts "State Corruptor - Shared Edits Testing Tool"
+puts "=" * 50
+puts "Post ID: #{post_id}"
+puts "Topic: #{post.topic.title}"
+puts "Mode: #{opts[:mode]}"
+
+print_health(post_id, "BEFORE") if opts[:show_health]
+
+corrupt_state(post_id, latest, mode_config, opts[:mode])
+
+print_health(post_id, "AFTER") if opts[:show_health]
+
+trigger_commit_job(post_id) if opts[:trigger_commit]
+
+print_testing_instructions(post_id, post)
+
+# rubocop:enable Discourse/Plugins/NamespaceConstants, Discourse/Plugins/NamespaceMethods
+# rubocop:enable Discourse/NoChdir

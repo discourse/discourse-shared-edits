@@ -149,4 +149,91 @@ RSpec.describe DiscourseSharedEdits::Yjs do
       expect(applied[:text]).to eq("Second version")
     end
   end
+
+  describe ".get_state_vector" do
+    it "returns a state vector for a given state" do
+      state = described_class.state_from_text("Hello")[:state]
+      sv = described_class.get_state_vector(state)
+
+      expect(sv).to be_an(Array)
+      expect(sv).not_to be_empty
+    end
+
+    it "returns different state vectors for different states" do
+      state1 = described_class.state_from_text("Hello")[:state]
+      state2 = described_class.state_from_text("World")[:state]
+
+      sv1 = described_class.get_state_vector(state1)
+      sv2 = described_class.get_state_vector(state2)
+
+      expect(sv1).not_to eq(sv2)
+    end
+  end
+
+  describe ".compare_state_vectors" do
+    it "returns valid when client has seen all server operations" do
+      state = described_class.state_from_text("Hello")[:state]
+      sv = described_class.get_state_vector(state)
+
+      result = described_class.compare_state_vectors(sv, sv)
+
+      expect(result[:valid]).to eq(true)
+      expect(result[:missing]).to be_empty
+    end
+
+    it "returns invalid when client is behind server" do
+      state1 = described_class.state_from_text("Hello")[:state]
+      update = described_class.update_from_state(state1, "Hello World")
+      state2 = described_class.apply_update(state1, update)[:state]
+
+      client_sv = described_class.get_state_vector(state1)
+      server_sv = described_class.get_state_vector(state2)
+
+      result = described_class.compare_state_vectors(client_sv, server_sv)
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:missing]).not_to be_empty
+    end
+
+    it "returns valid when client is ahead of server" do
+      state1 = described_class.state_from_text("Hello")[:state]
+      update = described_class.update_from_state(state1, "Hello World")
+      state2 = described_class.apply_update(state1, update)[:state]
+
+      client_sv = described_class.get_state_vector(state2)
+      server_sv = described_class.get_state_vector(state1)
+
+      result = described_class.compare_state_vectors(client_sv, server_sv)
+
+      expect(result[:valid]).to eq(true)
+    end
+  end
+
+  describe ".get_missing_update" do
+    it "returns an update containing operations the client is missing" do
+      state1 = described_class.state_from_text("Hello")[:state]
+      update = described_class.update_from_state(state1, "Hello World")
+      state2 = described_class.apply_update(state1, update)[:state]
+
+      client_sv =
+        Base64.strict_decode64(
+          Base64.strict_encode64(described_class.get_state_vector(state1).pack("C*")),
+        ).bytes
+
+      missing_update = described_class.get_missing_update(state2, client_sv)
+
+      applied = described_class.apply_update(state1, missing_update)
+      expect(applied[:text]).to eq("Hello World")
+    end
+
+    it "returns empty update when client is caught up" do
+      state = described_class.state_from_text("Hello")[:state]
+      sv = described_class.get_state_vector(state)
+
+      missing_update = described_class.get_missing_update(state, sv)
+
+      decoded = Base64.strict_decode64(missing_update)
+      expect(decoded.bytesize).to be < 10
+    end
+  end
 end

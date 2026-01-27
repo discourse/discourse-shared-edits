@@ -15,7 +15,10 @@
  */
 import Service, { service } from "@ember/service";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import { applyDiff } from "../lib/shared-edits/encoding-utils";
+import {
+  applyDiff,
+  base64ToUint8Array,
+} from "../lib/shared-edits/encoding-utils";
 import MarkdownSync from "../lib/shared-edits/markdown-sync";
 import NetworkManager from "../lib/shared-edits/network-manager";
 import RichModeSync from "../lib/shared-edits/rich-mode-sync";
@@ -70,11 +73,12 @@ export default class SharedEditManager extends Service {
   #richModeFailed = false;
   #closing = false;
   #commitPromise = null;
+  #resyncInProgress = false;
 
   // Event handlers
   #handleDocUpdate = (update, origin) => {
     // Skip remote updates (already applied, don't need to send back)
-    if (origin === "remote") {
+    if (origin === "remote" || origin === "resync") {
       return;
     }
 
@@ -210,8 +214,15 @@ export default class SharedEditManager extends Service {
       return;
     }
 
+    // Guard against concurrent/duplicate resyncs
+    if (this.#resyncInProgress) {
+      return;
+    }
+    this.#resyncInProgress = true;
+
     const postId = this.currentPostId || this.#postId;
     if (!postId) {
+      this.#resyncInProgress = false;
       return;
     }
 
@@ -226,13 +237,84 @@ export default class SharedEditManager extends Service {
       if (!this.composer.model || this.isDestroying || this.isDestroyed) {
         return;
       }
-      await this.#setupDoc(data.state, data.raw);
-      this.pendingComposerReply =
-        this.#yjsDocument?.getText() ?? data.raw ?? "";
-      this.#composerReady = false;
-      await this.finalizeSubscription();
+
+      // In rich mode with an existing Y.Doc, apply the server state as an update
+      // rather than creating a new Y.Doc. This preserves the ProseMirror binding.
+      if (this.isRichMode && this.#yjsDocument?.doc) {
+        try {
+          const Y = window.SharedEditsYjs?.Y || window.Y;
+          if (Y && data.state) {
+            const serverUpdate = base64ToUint8Array(data.state);
+            // Apply server state as update - CRDT will merge
+            Y.applyUpdate(this.#yjsDocument.doc, serverUpdate, "resync");
+
+            // eslint-disable-next-line no-console
+            console.log(
+              "[SharedEdits] Resync: applied server update to existing doc"
+            );
+          }
+
+          // Skip state vector validation for the next update after resync
+          // because the client's doc now has merged state that the server doesn't know about
+          if (this.#networkManager) {
+            this.#networkManager.skipNextStateVector = true;
+          }
+
+          if (this.#richModeSync && this.#yjsDocument?.xmlFragment) {
+            this.#richModeSync.syncYTextFromXmlFragment(
+              this.#yjsDocument.xmlFragment,
+              this.#yjsDocument.text,
+              this.#yjsDocument.doc,
+              { consumeMarkdown: true }
+            );
+          }
+
+          this.pendingComposerReply =
+            this.#yjsDocument?.getText() ?? data.raw ?? "";
+          this.#composerReady = true; // Keep ready state so editing can continue
+
+          this.#queueMissingUpdatesFromServerState(data.state);
+
+          // Re-subscribe to MessageBus with new last_id
+          this.#networkManager?.subscribe(
+            postId,
+            this.#networkManager.messageBusLastId ?? -1
+          );
+        } catch (updateError) {
+          // If applying update fails, fall back to full setup
+          // eslint-disable-next-line no-console
+          console.error(
+            "[SharedEdits] Resync: failed to apply update, falling back:",
+            updateError
+          );
+          await this.#setupDoc(data.state, data.raw);
+          this.pendingComposerReply =
+            this.#yjsDocument?.getText() ?? data.raw ?? "";
+          this.#composerReady = false;
+          await this.finalizeSubscription();
+        }
+      } else {
+        // Markdown mode or no existing doc - full setup
+        await this.#setupDoc(data.state, data.raw);
+
+        let pendingText = this.#yjsDocument?.getText() ?? data.raw ?? "";
+        const localText = this.composer?.model?.reply;
+        if (typeof localText === "string" && localText !== pendingText) {
+          this.#yjsDocument?.doc?.transact(
+            () => applyDiff(this.#yjsDocument.text, pendingText, localText),
+            this
+          );
+          pendingText = localText;
+        }
+        this.pendingComposerReply = pendingText;
+        this.#composerReady = false;
+        this.#queueMissingUpdatesFromServerState(data.state);
+        await this.finalizeSubscription();
+      }
     } catch (e) {
       popupAjaxError(e);
+    } finally {
+      this.#resyncInProgress = false;
     }
   };
 
@@ -476,6 +558,7 @@ export default class SharedEditManager extends Service {
           ),
           getClientId: () => this.messageBus.clientId,
           allowBlankState: this.#shouldAllowBlankState(),
+          getDoc: () => this.#yjsDocument?.doc,
         }
       );
 
@@ -532,6 +615,33 @@ export default class SharedEditManager extends Service {
     this.#networkManager = new NetworkManager(this, {
       onRemoteMessage: this.#handleRemoteMessage,
       onResync: this.#handleResync,
+      getRecoveryText: () => {
+        if (this.isRichMode) {
+          // Prefer live ProseMirror serialization for recovery text.
+          const markdown = getMarkdownFromView({ consumeCapture: true });
+          if (markdown !== null) {
+            return markdown;
+          }
+
+          if (
+            this.#richModeSync &&
+            this.#yjsDocument?.xmlFragment &&
+            this.#yjsDocument?.text &&
+            this.#yjsDocument?.doc
+          ) {
+            this.#richModeSync.syncYTextFromXmlFragment(
+              this.#yjsDocument.xmlFragment,
+              this.#yjsDocument.text,
+              this.#yjsDocument.doc,
+              { consumeMarkdown: true }
+            );
+          }
+
+          // Fall back to Y.Text after forcing a sync from the view/XML fragment.
+          return this.#yjsDocument?.text?.toString() ?? null;
+        }
+        return this.composer.model?.reply ?? null;
+      },
     });
     this.#networkManager.onSendUpdates = () => this.#sendUpdates();
 
@@ -611,6 +721,46 @@ export default class SharedEditManager extends Service {
     );
   }
 
+  #queueMissingUpdatesFromServerState(serverState) {
+    if (!serverState || !this.#yjsDocument?.doc || !this.#networkManager) {
+      return;
+    }
+
+    const Y = window.SharedEditsYjs?.Y || window.Y;
+    if (
+      !Y?.Doc ||
+      !Y?.applyUpdate ||
+      !Y?.encodeStateVector ||
+      !Y?.encodeStateAsUpdate
+    ) {
+      return;
+    }
+
+    let serverDoc;
+    try {
+      serverDoc = new Y.Doc();
+      const serverUpdate = base64ToUint8Array(serverState);
+      if (serverUpdate?.length) {
+        Y.applyUpdate(serverDoc, serverUpdate, "remote");
+      }
+
+      const serverVector = Y.encodeStateVector(serverDoc);
+      const missingUpdate = Y.encodeStateAsUpdate(
+        this.#yjsDocument.doc,
+        serverVector
+      );
+
+      if (missingUpdate?.length) {
+        this.#networkManager.queueUpdate(missingUpdate);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[SharedEdits] Failed to queue missing updates:", e);
+    } finally {
+      serverDoc?.destroy?.();
+    }
+  }
+
   #cleanup() {
     this.#markdownSync?.detach();
     this.#richModeSync?.teardown(
@@ -632,6 +782,7 @@ export default class SharedEditManager extends Service {
     this.#richModeFailed = false;
     this.#closing = false;
     this.#commitPromise = null;
+    this.#resyncInProgress = false;
     this.suppressComposerChange = false;
   }
 
@@ -676,6 +827,7 @@ export default class SharedEditManager extends Service {
         ),
         getClientId: () => this.messageBus.clientId,
         allowBlankState: this.#shouldAllowBlankState(),
+        getDoc: () => this.#yjsDocument?.doc,
       });
     } catch (e) {
       // Errors are handled in NetworkManager, but log for debugging

@@ -4,6 +4,8 @@ en:
     errors:
       state_corrupted: "The collaborative editing state is corrupted and could not be recovered. Please try again."
       state_recovered: "The collaborative editing state was corrupted but has been recovered. Please refresh to continue editing."
+      needs_recovery_text: "Collaborative editing state needs recovery. Please retry."
+      recovery_failed: "Failed to recover collaborative editing state. Please refresh and try again."
       blank_state_rejected: "We blocked a collaborative edit because it would have erased the entire post. Please reopen the composer to refresh the shared document."
       invalid_update: "The update payload was malformed. Please refresh and try again."
       post_length_exceeded: "Post content exceeds maximum length (%{current}/%{max} characters)"

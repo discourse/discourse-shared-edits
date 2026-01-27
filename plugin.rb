@@ -30,14 +30,14 @@ after_initialize do
   require_relative "lib/discourse_shared_edits/guardian_extension"
 
   ::DiscourseSharedEdits::Engine.routes.draw do
-    put "/p/:post_id/enable" => "revision#enable"
-    put "/p/:post_id/disable" => "revision#disable"
-    put "/p/:post_id" => "revision#revise"
-    get "/p/:post_id" => "revision#latest"
-    put "/p/:post_id/commit" => "revision#commit"
-    get "/p/:post_id/health" => "revision#health"
-    post "/p/:post_id/recover" => "revision#recover"
-    post "/p/:post_id/reset" => "revision#reset"
+    put "/p/:post_id/enable" => "revision#enable", :defaults => { format: :json }
+    put "/p/:post_id/disable" => "revision#disable", :defaults => { format: :json }
+    put "/p/:post_id" => "revision#revise", :defaults => { format: :json }
+    get "/p/:post_id" => "revision#latest", :defaults => { format: :json }
+    put "/p/:post_id/commit" => "revision#commit", :defaults => { format: :json }
+    get "/p/:post_id/health" => "revision#health", :defaults => { format: :json }
+    post "/p/:post_id/recover" => "revision#recover", :defaults => { format: :json }
+    post "/p/:post_id/reset" => "revision#reset", :defaults => { format: :json }
   end
 
   Discourse::Application.routes.append { mount ::DiscourseSharedEdits::Engine, at: "/shared_edits" }

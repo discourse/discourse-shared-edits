@@ -60,6 +60,92 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
     end
   end
 
+  describe ".validate_state_vector" do
+    it "returns valid for a properly encoded state vector" do
+      state = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
+      sv = DiscourseSharedEdits::Yjs.get_state_vector(state)
+      sv_b64 = Base64.strict_encode64(sv.pack("C*"))
+
+      result = described_class.validate_state_vector(sv_b64)
+
+      expect(result[:valid]).to eq(true)
+      expect(result[:error]).to be_nil
+    end
+
+    it "returns invalid for nil state vector" do
+      result = described_class.validate_state_vector(nil)
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to eq("State vector is nil")
+    end
+
+    it "returns invalid for empty state vector" do
+      result = described_class.validate_state_vector("")
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to eq("State vector is empty")
+    end
+
+    it "returns invalid for malformed base64" do
+      result = described_class.validate_state_vector("not-valid-base64!!!")
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to include("Invalid base64")
+    end
+  end
+
+  describe ".validate_client_state_vector" do
+    it "returns valid when client state vector matches server" do
+      state = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
+      sv = DiscourseSharedEdits::Yjs.get_state_vector(state)
+      sv_b64 = Base64.strict_encode64(sv.pack("C*"))
+
+      result = described_class.validate_client_state_vector(state, sv_b64)
+
+      expect(result[:valid]).to eq(true)
+      expect(result[:missing_update]).to be_nil
+    end
+
+    it "returns invalid with missing_update when client is behind server" do
+      state1 = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
+      update = DiscourseSharedEdits::Yjs.update_from_state(state1, "Hello World")
+      state2 = DiscourseSharedEdits::Yjs.apply_update(state1, update)[:state]
+
+      client_sv = DiscourseSharedEdits::Yjs.get_state_vector(state1)
+      client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
+
+      result = described_class.validate_client_state_vector(state2, client_sv_b64)
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:missing_update]).to be_present
+
+      applied = DiscourseSharedEdits::Yjs.apply_update(state1, result[:missing_update])
+      expect(applied[:text]).to eq("Hello World")
+    end
+
+    it "returns valid when client is ahead of server" do
+      state1 = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
+      update = DiscourseSharedEdits::Yjs.update_from_state(state1, "Hello World")
+      state2 = DiscourseSharedEdits::Yjs.apply_update(state1, update)[:state]
+
+      client_sv = DiscourseSharedEdits::Yjs.get_state_vector(state2)
+      client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
+
+      result = described_class.validate_client_state_vector(state1, client_sv_b64)
+
+      expect(result[:valid]).to eq(true)
+    end
+
+    it "returns error for invalid state vector" do
+      state = DiscourseSharedEdits::Yjs.state_from_text("Hello")[:state]
+
+      result = described_class.validate_client_state_vector(state, "invalid!!!")
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to include("Invalid base64")
+    end
+  end
+
   describe ".should_snapshot?" do
     it "returns false for nil state" do
       expect(described_class.should_snapshot?(nil)).to eq(false)

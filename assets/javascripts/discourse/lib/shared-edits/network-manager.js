@@ -26,12 +26,14 @@ export default class NetworkManager {
   ajaxInProgress = false;
   inFlightRequest = null;
   messageBusLastId = null;
+  skipNextStateVector = false; // Skip state vector validation after resync
 
   #sendUpdatesThrottleId = null;
   #messageBusPostId = null;
   #messageBusLastSubscribedId = null;
   #onRemoteMessage = null;
   #onResync = null;
+  #getRecoveryText = null;
   #retryCount = 0;
 
   #handleRemoteMessage = (message) => {
@@ -56,22 +58,23 @@ export default class NetworkManager {
     this.#onRemoteMessage?.(parsedMessage);
   };
 
-  constructor(context, { onRemoteMessage, onResync } = {}) {
+  constructor(context, { onRemoteMessage, onResync, getRecoveryText } = {}) {
     setOwner(this, getOwner(context));
     this.#onRemoteMessage = onRemoteMessage;
     this.#onResync = onResync;
+    this.#getRecoveryText = getRecoveryText;
   }
 
   // API calls
 
   async fetchState(postId) {
-    const data = await ajax(`/shared_edits/p/${postId}`);
+    const data = await ajax(`/shared_edits/p/${postId}.json`);
     this.messageBusLastId = data.message_bus_last_id ?? -1;
     return data;
   }
 
   async commitEdits(postId) {
-    await ajax(`/shared_edits/p/${postId}/commit`, { method: "PUT" });
+    await ajax(`/shared_edits/p/${postId}/commit.json`, { method: "PUT" });
   }
 
   // Update management
@@ -103,7 +106,7 @@ export default class NetworkManager {
   // Returns { resynced: true } if a 409 state_recovered triggered a resync
   async sendUpdates(
     postId,
-    { cursorPayload, isRichMode, getClientId, allowBlankState } = {}
+    { cursorPayload, isRichMode, getClientId, allowBlankState, getDoc } = {}
   ) {
     const updatesToSend = [...this.pendingUpdates];
     const awarenessToSend = this.pendingAwarenessUpdate;
@@ -145,6 +148,17 @@ export default class NetworkManager {
       );
       if (payload) {
         data.update = uint8ArrayToBase64(payload);
+
+        // Include state vector for server-side validation (unless skipped after resync)
+        if (!this.skipNextStateVector) {
+          const doc = getDoc?.();
+          if (doc) {
+            const Y = window.SharedEditsYjs?.Y || window.Y;
+            if (Y?.encodeStateVector) {
+              data.state_vector = uint8ArrayToBase64(Y.encodeStateVector(doc));
+            }
+          }
+        }
       }
     }
 
@@ -159,19 +173,95 @@ export default class NetworkManager {
     this.ajaxInProgress = true;
 
     try {
-      this.inFlightRequest = ajax(`/shared_edits/p/${postId}`, {
+      this.inFlightRequest = ajax(`/shared_edits/p/${postId}.json`, {
         method: "PUT",
         data,
       });
 
       await this.inFlightRequest;
       this.#retryCount = 0;
+      this.skipNextStateVector = false; // Reset after successful update
       return { resynced: false };
     } catch (e) {
+      // Handle corruption that needs client text for recovery
+      if (
+        e.jqXHR?.status === 409 &&
+        e.jqXHR?.responseJSON?.error === "needs_recovery_text"
+      ) {
+        const recoveryText = this.#getRecoveryText?.();
+        if (recoveryText != null) {
+          // eslint-disable-next-line no-console
+          console.log(
+            "[SharedEdits] Corruption detected, sending recovery text"
+          );
+          try {
+            const retryResult = await ajax(`/shared_edits/p/${postId}.json`, {
+              method: "PUT",
+              data: {
+                client_id: data.client_id,
+                recovery_text: recoveryText,
+              },
+            });
+            // eslint-disable-next-line no-console
+            console.log(
+              "[SharedEdits] Recovery successful, version:",
+              retryResult.version
+            );
+            this.#retryCount = 0;
+            // Trigger resync to reinitialize local Y.Doc with the server's fresh state
+            // This ensures the local doc matches exactly what the server accepted
+            this.#onResync?.();
+            return { resynced: true, recovered: true };
+          } catch (retryError) {
+            // eslint-disable-next-line no-console
+            console.error(
+              "[SharedEdits] Recovery with client text failed:",
+              retryError
+            );
+          }
+        }
+      }
+
       if (
         e.jqXHR?.status === 409 &&
         e.jqXHR?.responseJSON?.error === "state_recovered"
       ) {
+        this.#retryCount = 0;
+        this.#onResync?.();
+        return { resynced: true };
+      }
+
+      // Handle state divergence - client is behind server
+      if (
+        e.jqXHR?.status === 409 &&
+        e.jqXHR?.responseJSON?.error === "state_diverged" &&
+        e.jqXHR?.responseJSON?.missing_update
+      ) {
+        const doc = getDoc?.();
+        if (doc) {
+          const Y = window.SharedEditsYjs?.Y || window.Y;
+          if (Y?.applyUpdate) {
+            // eslint-disable-next-line no-console
+            console.log(
+              "[SharedEdits] State diverged, applying missing update"
+            );
+            const missingUpdate = base64ToUint8Array(
+              e.jqXHR.responseJSON.missing_update
+            );
+            Y.applyUpdate(doc, missingUpdate, "remote");
+
+            // Re-queue the failed updates to try again with the now-synced state
+            if (sentUpdates.length && this.#retryCount <= MAX_RETRY_ATTEMPTS) {
+              const combined = sentUpdates.concat(this.pendingUpdates);
+              this.pendingUpdates = combined.slice(0, MAX_PENDING_UPDATES);
+              this.#retryCount++;
+              // Trigger immediate retry
+              this.#sendUpdatesThrottled();
+              return { resynced: false, appliedMissingUpdate: true };
+            }
+          }
+        }
+        // If we couldn't apply the missing update, trigger full resync
         this.#retryCount = 0;
         this.#onResync?.();
         return { resynced: true };
@@ -272,6 +362,7 @@ export default class NetworkManager {
     this.ajaxInProgress = false;
     this.inFlightRequest = null;
     this.messageBusLastId = null;
+    this.skipNextStateVector = false;
   }
 
   async #prepareUpdatePayload(updates) {
