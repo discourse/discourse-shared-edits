@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "base64"
+require "digest"
 require "mini_racer"
 
 module DiscourseSharedEdits
@@ -224,6 +225,12 @@ module DiscourseSharedEdits
 
       def get_missing_update(server_state_b64, client_sv)
         encode(context.call("getMissingUpdate", decode(server_state_b64), client_sv))
+      end
+
+      def compute_state_hash(state_b64)
+        return nil if state_b64.blank?
+        decoded = Base64.decode64(state_b64)
+        Digest::SHA256.hexdigest(decoded)
       end
 
       private

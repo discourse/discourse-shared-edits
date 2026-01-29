@@ -224,6 +224,36 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(post1.raw[0..3]).to eq("1234")
     end
 
+    it "includes state_hash in response after commit computes it" do
+      new_text = "1234" + post1.raw[4..]
+      latest_state = latest_state_for(post1)
+
+      # First update - no state_hash yet (computed during commit)
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+          }
+      expect(response.status).to eq(200)
+      expect(response.parsed_body["state_hash"]).to be_nil
+
+      # Commit to compute state_hash
+      SharedEditRevision.commit!(post1.id)
+
+      # Second update - should include state_hash from previous commit
+      latest_state = latest_state_for(post1)
+      new_text = "5678" + post1.raw[4..]
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+          }
+      expect(response.status).to eq(200)
+      state_hash = response.parsed_body["state_hash"]
+      expect(state_hash).to be_present
+      expect(state_hash).to match(/\A[0-9a-f]{64}\z/)
+    end
+
     it "rejects blanking a post without explicit allow flag" do
       latest_state = latest_state_for(post1)
       blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")

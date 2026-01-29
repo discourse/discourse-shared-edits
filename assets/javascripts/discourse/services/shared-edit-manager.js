@@ -15,6 +15,7 @@
  */
 import Service, { service } from "@ember/service";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { debugError, debugLog } from "../lib/shared-edits/debug";
 import {
   applyDiff,
   base64ToUint8Array,
@@ -199,6 +200,10 @@ export default class SharedEditManager extends Service {
           cursor,
         });
       }
+
+      // Notify network manager that a remote update was applied
+      // This allows it to re-verify state hash sync
+      this.#networkManager?.notifyRemoteUpdateApplied();
     }
   };
 
@@ -248,10 +253,7 @@ export default class SharedEditManager extends Service {
             // Apply server state as update - CRDT will merge
             Y.applyUpdate(this.#yjsDocument.doc, serverUpdate, "resync");
 
-            // eslint-disable-next-line no-console
-            console.log(
-              "[SharedEdits] Resync: applied server update to existing doc"
-            );
+            debugLog("Resync: applied server update to existing doc");
           }
 
           // Skip state vector validation for the next update after resync
@@ -282,11 +284,7 @@ export default class SharedEditManager extends Service {
           );
         } catch (updateError) {
           // If applying update fails, fall back to full setup
-          // eslint-disable-next-line no-console
-          console.error(
-            "[SharedEdits] Resync: failed to apply update, falling back:",
-            updateError
-          );
+          debugError("Resync: failed to apply update, falling back:", updateError);
           await this.#setupDoc(data.state, data.raw);
           this.pendingComposerReply =
             this.#yjsDocument?.getText() ?? data.raw ?? "";
@@ -330,11 +328,7 @@ export default class SharedEditManager extends Service {
           { consumeMarkdown: true }
         );
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error(
-          "[SharedEdits] Final sync failed during rich mode error:",
-          e
-        );
+        debugError("Final sync failed during rich mode error:", e);
       }
     }
 
@@ -754,8 +748,7 @@ export default class SharedEditManager extends Service {
         this.#networkManager.queueUpdate(missingUpdate);
       }
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error("[SharedEdits] Failed to queue missing updates:", e);
+      debugError("Failed to queue missing updates:", e);
     } finally {
       serverDoc?.destroy?.();
     }
@@ -831,8 +824,7 @@ export default class SharedEditManager extends Service {
       });
     } catch (e) {
       // Errors are handled in NetworkManager, but log for debugging
-      // eslint-disable-next-line no-console
-      console.error("[SharedEdits] Failed to send updates:", e);
+      debugError("Failed to send updates:", e);
     }
   }
 

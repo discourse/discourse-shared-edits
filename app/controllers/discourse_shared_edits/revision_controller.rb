@@ -183,7 +183,7 @@ module ::DiscourseSharedEdits
         end
       end
 
-      version, update =
+      version, update, state_hash =
         SharedEditRevision.revise!(
           post_id: @post.id,
           user_id: current_user.id,
@@ -198,7 +198,9 @@ module ::DiscourseSharedEdits
 
       SharedEditRevision.ensure_will_commit(@post.id)
 
-      render json: { version: version, update: update }
+      response = { version: version, update: update }
+      response[:state_hash] = state_hash if state_hash.present?
+      render json: response
     rescue StateValidator::UnexpectedBlankStateError => e
       Rails.logger.warn(
         "[SharedEdits] Rejected blank update for post #{params[:post_id]}: #{e.message}",

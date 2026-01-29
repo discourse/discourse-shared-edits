@@ -147,6 +147,12 @@ class SharedEditRevision < ActiveRecord::Base
     end
 
     compact_history!(post_id)
+
+    # Compute and store state hash AFTER compact_history! since snapshotting can mutate latest.raw
+    # Re-fetch latest to get the potentially updated state
+    latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+    update_state_hash!(latest)
+
     raw
   end
 
@@ -306,6 +312,14 @@ class SharedEditRevision < ActiveRecord::Base
   private_class_method :commit_mutex_key
   private_class_method :compact_history!
 
+  def self.update_state_hash!(revision)
+    return if revision.nil? || revision.raw.blank?
+    return if column_names.exclude?("state_hash")
+    state_hash = DiscourseSharedEdits::Yjs.compute_state_hash(revision.raw)
+    revision.update_column(:state_hash, state_hash) if state_hash.present?
+  end
+  private_class_method :update_state_hash!
+
   def self.snapshot_state!(post_id, latest)
     return if latest&.raw.blank?
 
@@ -428,7 +442,12 @@ class SharedEditRevision < ActiveRecord::Base
           max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
         )
 
-        [revision.version, update]
+        # Return the most recently computed state_hash for sync verification.
+        # This hash is from the most recently committed revision (computed during
+        # commit!), not the newly created revision. Clients use this as a sync
+        # target and forward MessageBus updates until their local hash matches.
+        state_hash = latest.respond_to?(:state_hash) ? latest.state_hash : nil
+        [revision.version, update, state_hash]
       end
     rescue ActiveRecord::RecordNotUnique => e
       retries += 1
@@ -464,6 +483,7 @@ end
 #  client_id        :string           not null
 #  version          :integer          not null
 #  post_revision_id :integer
+#  state_hash       :string(64)
 #  created_at       :datetime         not null
 #  updated_at       :datetime         not null
 #

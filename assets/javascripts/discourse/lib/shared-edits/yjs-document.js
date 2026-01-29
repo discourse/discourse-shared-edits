@@ -6,6 +6,7 @@ import { getOwner, setOwner } from "@ember/owner";
 import { service } from "@ember/service";
 import loadScript from "discourse/lib/load-script";
 import { YJS_DIST_URL, YJS_PROSEMIRROR_URL } from "./bundle-paths";
+import { debugError } from "./debug";
 import { base64ToUint8Array, getUserColorForId } from "./encoding-utils";
 
 // Yjs loading promises (module-level for singleton behavior)
@@ -124,6 +125,32 @@ export function resetYjsModuleState() {
   clearPM();
 }
 
+// State hash computation
+
+export async function computeStateHash(yDoc) {
+  const Y = window.SharedEditsYjs?.Y || window.Y;
+  if (!Y || !yDoc) {
+    return null;
+  }
+
+  // crypto.subtle is only available in secure contexts (HTTPS)
+  // On HTTP, skip hash computation - sync verification will be disabled
+  if (!crypto?.subtle?.digest) {
+    return null;
+  }
+
+  try {
+    const state = Y.encodeStateAsUpdate(yDoc);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", state);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch (e) {
+    debugError("Failed to compute state hash:", e);
+    return null;
+  }
+}
+
 // Yjs loading functions
 
 export function triggerYjsLoad() {
@@ -202,11 +229,7 @@ export default class YjsDocument {
       try {
         await this.#setupRichDoc(state, callbacks);
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(
-          "[SharedEdits] Rich mode setup failed, falling back to markdown:",
-          error
-        );
+        debugError("Rich mode setup failed, falling back to markdown:", error);
         this.teardown();
         callbacks.onRichModeFailed?.();
         await this.#setupMarkdownDoc(state, raw, callbacks);

@@ -6,13 +6,15 @@ import { getOwner, setOwner } from "@ember/owner";
 import { cancel, throttle } from "@ember/runloop";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
+import { debugError, debugLog, debugWarn } from "./debug";
 import { base64ToUint8Array, uint8ArrayToBase64 } from "./encoding-utils";
-import { triggerYjsLoad } from "./yjs-document";
+import { computeStateHash, triggerYjsLoad } from "./yjs-document";
 
 const THROTTLE_SAVE = 500;
 const MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits";
 const MAX_PENDING_UPDATES = 100;
 const MAX_RETRY_ATTEMPTS = 3;
+const STATE_HASH_SYNC_TIMEOUT = 5000; // 5 seconds to reach target hash
 
 function messageBusChannel(postId) {
   return `${MESSAGE_BUS_CHANNEL_PREFIX}/${postId}`;
@@ -28,6 +30,12 @@ export default class NetworkManager {
   messageBusLastId = null;
   skipNextStateVector = false; // Skip state vector validation after resync
 
+  // State hash sync tracking
+  #targetStateHash = null;
+  #hashSyncTimeoutId = null;
+  #getDoc = null;
+  #lastVerifiedHash = null; // Cache to avoid redundant hash computation
+
   #sendUpdatesThrottleId = null;
   #messageBusPostId = null;
   #messageBusLastSubscribedId = null;
@@ -38,6 +46,7 @@ export default class NetworkManager {
 
   #handleRemoteMessage = (message) => {
     if (message.action === "resync") {
+      this.#lastVerifiedHash = null; // Invalidate cache on resync
       this.#onResync?.();
       return;
     }
@@ -50,6 +59,7 @@ export default class NetworkManager {
     const parsedMessage = { ...message };
     if (message.update) {
       parsedMessage.updateBinary = base64ToUint8Array(message.update);
+      this.#lastVerifiedHash = null; // Invalidate cache when doc changes
     }
     if (message.awareness) {
       parsedMessage.awarenessBinary = base64ToUint8Array(message.awareness);
@@ -81,6 +91,7 @@ export default class NetworkManager {
 
   queueUpdate(update) {
     this.pendingUpdates.push(update);
+    this.#lastVerifiedHash = null; // Invalidate cache when doc changes
     this.#sendUpdatesThrottled();
   }
 
@@ -178,9 +189,18 @@ export default class NetworkManager {
         data,
       });
 
-      await this.inFlightRequest;
+      const response = await this.inFlightRequest;
       this.#retryCount = 0;
       this.skipNextStateVector = false; // Reset after successful update
+
+      // Store getDoc for hash verification
+      this.#getDoc = getDoc;
+
+      // Process state_hash from server response for sync verification
+      if (response?.state_hash) {
+        this.#processServerStateHash(response.state_hash, getDoc);
+      }
+
       return { resynced: false };
     } catch (e) {
       // Handle corruption that needs client text for recovery
@@ -190,10 +210,7 @@ export default class NetworkManager {
       ) {
         const recoveryText = this.#getRecoveryText?.();
         if (recoveryText != null) {
-          // eslint-disable-next-line no-console
-          console.log(
-            "[SharedEdits] Corruption detected, sending recovery text"
-          );
+          debugLog("Corruption detected, sending recovery text");
           try {
             const retryResult = await ajax(`/shared_edits/p/${postId}.json`, {
               method: "PUT",
@@ -202,22 +219,14 @@ export default class NetworkManager {
                 recovery_text: recoveryText,
               },
             });
-            // eslint-disable-next-line no-console
-            console.log(
-              "[SharedEdits] Recovery successful, version:",
-              retryResult.version
-            );
+            debugLog("Recovery successful, version:", retryResult.version);
             this.#retryCount = 0;
             // Trigger resync to reinitialize local Y.Doc with the server's fresh state
             // This ensures the local doc matches exactly what the server accepted
             this.#onResync?.();
             return { resynced: true, recovered: true };
           } catch (retryError) {
-            // eslint-disable-next-line no-console
-            console.error(
-              "[SharedEdits] Recovery with client text failed:",
-              retryError
-            );
+            debugError("Recovery with client text failed:", retryError);
           }
         }
       }
@@ -241,10 +250,7 @@ export default class NetworkManager {
         if (doc) {
           const Y = window.SharedEditsYjs?.Y || window.Y;
           if (Y?.applyUpdate) {
-            // eslint-disable-next-line no-console
-            console.log(
-              "[SharedEdits] State diverged, applying missing update"
-            );
+            debugLog("State diverged, applying missing update");
             const missingUpdate = base64ToUint8Array(
               e.jqXHR.responseJSON.missing_update
             );
@@ -274,8 +280,7 @@ export default class NetworkManager {
         const combined = sentUpdates.concat(this.pendingUpdates);
         this.pendingUpdates = combined.slice(0, MAX_PENDING_UPDATES);
       } else if (this.#retryCount > MAX_RETRY_ATTEMPTS) {
-        // eslint-disable-next-line no-console
-        console.error("[SharedEdits] Max retries exceeded, triggering resync");
+        debugError("Max retries exceeded, triggering resync");
         this.#retryCount = 0;
         this.#onResync?.();
         return { resynced: true };
@@ -356,6 +361,7 @@ export default class NetworkManager {
       cancel(this.#sendUpdatesThrottleId);
       this.#sendUpdatesThrottleId = null;
     }
+    this.#clearHashSyncTimeout();
     this.unsubscribe();
     this.pendingUpdates = [];
     this.pendingAwarenessUpdate = null;
@@ -363,6 +369,106 @@ export default class NetworkManager {
     this.inFlightRequest = null;
     this.messageBusLastId = null;
     this.skipNextStateVector = false;
+    this.#targetStateHash = null;
+    this.#lastVerifiedHash = null;
+    this.#getDoc = null;
+  }
+
+  // State hash sync methods
+
+  #processServerStateHash(serverHash, getDoc) {
+    if (!serverHash) {
+      return;
+    }
+
+    this.#targetStateHash = serverHash;
+
+    // Compute local hash asynchronously and verify
+    this.#verifyStateHash(getDoc);
+  }
+
+  async #verifyStateHash(getDoc) {
+    const doc = getDoc?.();
+    if (!doc || !this.#targetStateHash) {
+      return;
+    }
+
+    // Skip recomputation if we already verified this target hash
+    if (this.#lastVerifiedHash === this.#targetStateHash) {
+      this.#clearHashSyncTimeout();
+      this.#targetStateHash = null;
+      return;
+    }
+
+    const localHash = await computeStateHash(doc);
+    if (!localHash) {
+      return;
+    }
+
+    if (localHash === this.#targetStateHash) {
+      // Hashes match - we're synced
+      this.#lastVerifiedHash = localHash;
+      this.#clearHashSyncTimeout();
+      this.#targetStateHash = null;
+      return;
+    }
+
+    // Hashes don't match - start forwarding timeout if not already running
+    if (!this.#hashSyncTimeoutId) {
+      debugLog(
+        "State hash mismatch, waiting for MessageBus updates.",
+        `Local: ${localHash.slice(0, 8)}..., Target: ${this.#targetStateHash.slice(0, 8)}...`
+      );
+      this.#startHashSyncTimeout();
+    }
+  }
+
+  #startHashSyncTimeout() {
+    this.#clearHashSyncTimeout();
+    this.#hashSyncTimeoutId = setTimeout(() => {
+      this.#hashSyncTimeoutId = null;
+      this.#handleHashSyncTimeout();
+    }, STATE_HASH_SYNC_TIMEOUT);
+  }
+
+  #clearHashSyncTimeout() {
+    if (this.#hashSyncTimeoutId) {
+      clearTimeout(this.#hashSyncTimeoutId);
+      this.#hashSyncTimeoutId = null;
+    }
+  }
+
+  async #handleHashSyncTimeout() {
+    if (!this.#targetStateHash || !this.#getDoc) {
+      return;
+    }
+
+    // Check one more time if we've synced
+    const doc = this.#getDoc();
+    if (doc) {
+      const localHash = await computeStateHash(doc);
+      if (localHash === this.#targetStateHash) {
+        // We synced in time
+        this.#targetStateHash = null;
+        return;
+      }
+
+      debugWarn(
+        "State hash sync timeout - local state diverged from server.",
+        `Local: ${localHash?.slice(0, 8) || "null"}..., Target: ${this.#targetStateHash.slice(0, 8)}... Triggering resync.`
+      );
+    }
+
+    // Still mismatched after timeout - trigger full resync
+    this.#targetStateHash = null;
+    this.#onResync?.();
+  }
+
+  // Called when a remote message is applied to re-verify hash
+  async notifyRemoteUpdateApplied() {
+    if (this.#targetStateHash && this.#getDoc) {
+      await this.#verifyStateHash(this.#getDoc);
+    }
   }
 
   async #prepareUpdatePayload(updates) {
@@ -377,11 +483,7 @@ export default class NetworkManager {
         await triggerYjsLoad();
         merger = window.SharedEditsYjs?.Y || window.Y;
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          "[SharedEdits] Failed to load Yjs while merging updates:",
-          e
-        );
+        debugWarn("Failed to load Yjs while merging updates:", e);
       }
     }
 
@@ -389,10 +491,7 @@ export default class NetworkManager {
       return { payload: merger.mergeUpdates(updates), deferredUpdates: [] };
     }
 
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[SharedEdits] Unable to merge shared edit updates; sending sequentially."
-    );
+    debugWarn("Unable to merge shared edit updates; sending sequentially.");
     return { payload: updates[0], deferredUpdates: updates.slice(1) };
   }
 }

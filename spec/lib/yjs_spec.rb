@@ -236,4 +236,48 @@ RSpec.describe DiscourseSharedEdits::Yjs do
       expect(decoded.bytesize).to be < 10
     end
   end
+
+  describe ".compute_state_hash" do
+    it "returns a SHA256 hex digest of the state" do
+      state = described_class.state_from_text("Hello World")[:state]
+      hash = described_class.compute_state_hash(state)
+
+      expect(hash).to be_present
+      expect(hash).to match(/\A[0-9a-f]{64}\z/)
+    end
+
+    it "returns the same hash for the same state" do
+      state = described_class.state_from_text("Hello World")[:state]
+      hash1 = described_class.compute_state_hash(state)
+      hash2 = described_class.compute_state_hash(state)
+
+      expect(hash1).to eq(hash2)
+    end
+
+    it "returns different hashes for different states" do
+      state1 = described_class.state_from_text("Hello")[:state]
+      state2 = described_class.state_from_text("World")[:state]
+
+      hash1 = described_class.compute_state_hash(state1)
+      hash2 = described_class.compute_state_hash(state2)
+
+      expect(hash1).not_to eq(hash2)
+    end
+
+    it "returns nil for blank state" do
+      expect(described_class.compute_state_hash(nil)).to be_nil
+      expect(described_class.compute_state_hash("")).to be_nil
+    end
+
+    it "produces consistent hash after applying update" do
+      state1 = described_class.state_from_text("Hello")[:state]
+      update = described_class.update_from_state(state1, "Hello World")
+      state2 = described_class.apply_update(state1, update)[:state]
+
+      hash = described_class.compute_state_hash(state2)
+
+      expect(hash).to be_present
+      expect(hash).to match(/\A[0-9a-f]{64}\z/)
+    end
+  end
 end

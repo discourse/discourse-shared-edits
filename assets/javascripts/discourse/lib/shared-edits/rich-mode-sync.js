@@ -13,6 +13,7 @@ import {
   clearSharedEditYjsState,
   setSharedEditYjsState,
 } from "../shared-edits-prosemirror-extension";
+import { debugError, debugWarn } from "./debug";
 import { applyDiff } from "./encoding-utils";
 import { getMarkdownFromView } from "./yjs-document";
 
@@ -36,8 +37,7 @@ export default class RichModeSync {
     this._richModeFailed = true;
     this._handlingRichModeFailure = true;
 
-    // eslint-disable-next-line no-console
-    console.error("[SharedEdits] Rich mode collaboration failed:", error);
+    debugError("Rich mode collaboration failed:", error);
     this.dialog.alert(i18n("shared_edits.errors.rich_mode_failed"));
 
     this.#onError?.(error);
@@ -105,20 +105,15 @@ export default class RichModeSync {
     if (newText === null) {
       // ProseMirror serialization unavailable - this is a degraded state
       // Log a warning and attempt the lossy fallback only as last resort
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[SharedEdits] ProseMirror markdown serialization unavailable, " +
-          "falling back to lossy XML text extraction"
+      debugWarn(
+        "ProseMirror markdown serialization unavailable,",
+        "falling back to lossy XML text extraction"
       );
       newText = this.#extractTextFromXmlFragment(xmlFragment);
     }
 
     if (typeof newText !== "string") {
-      // eslint-disable-next-line no-console
-      console.error(
-        "[SharedEdits] Rich mode sync failed: newText is not a string",
-        typeof newText
-      );
+      debugError("Rich mode sync failed: newText is not a string", typeof newText);
       this.#onSyncAnomaly?.({
         reason: "invalid_newtext_type",
         type: typeof newText,
@@ -139,9 +134,8 @@ export default class RichModeSync {
       currentTrimmed.length > 0 &&
       newTextTrimmed.length === 0
     ) {
-      // eslint-disable-next-line no-console
-      console.error(
-        "[SharedEdits] Rich mode sync produced blank markdown despite populated document. Skipping update."
+      debugError(
+        "Rich mode sync produced blank markdown despite populated document. Skipping update."
       );
       this.#onSyncAnomaly?.({
         reason: "empty_serialization",

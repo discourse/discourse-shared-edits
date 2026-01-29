@@ -7,6 +7,7 @@ import {
   setConvertToMarkdown,
   setProsemirrorViewGetter,
 } from "../services/shared-edit-manager";
+import { debugError } from "./shared-edits/debug";
 
 let sharedEditYjsState = null;
 let stateIdCounter = 0;
@@ -155,10 +156,7 @@ const sharedEditsProsemirrorExtension = {
                 reportError(
                   new Error("y-prosemirror plugins not available after load")
                 );
-                // eslint-disable-next-line no-console
-                console.error(
-                  "[SharedEdits] y-prosemirror plugins not available after load"
-                );
+                debugError("y-prosemirror plugins not available after load");
                 return;
               }
 
@@ -186,11 +184,7 @@ const sharedEditsProsemirrorExtension = {
                 });
                 undoPlugin = SharedEditsYjs.yUndoPlugin();
               } catch (e) {
-                // eslint-disable-next-line no-console
-                console.error(
-                  "[SharedEdits] Error creating y-prosemirror plugins:",
-                  e
-                );
+                debugError("Error creating y-prosemirror plugins:", e);
                 reportError(e);
                 return;
               }
@@ -214,18 +208,13 @@ const sharedEditsProsemirrorExtension = {
                   })
                 );
               } catch (e) {
-                // eslint-disable-next-line no-console
-                console.error("[SharedEdits] Error updating view state:", e);
+                debugError("Error updating view state:", e);
                 reportError(e);
               }
             })
             .catch((error) => {
               reportError(error);
-              // eslint-disable-next-line no-console
-              console.error(
-                "[SharedEdits] Failed to load y-prosemirror plugins:",
-                error
-              );
+              debugError("Failed to load y-prosemirror plugins:", error);
             });
         }
 
