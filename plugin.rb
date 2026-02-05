@@ -45,6 +45,7 @@ after_initialize do
   reloadable_patch { Guardian.prepend(DiscourseSharedEdits::GuardianExtension) }
 
   register_post_custom_field_type(DiscourseSharedEdits::SHARED_EDITS_ENABLED, :boolean)
+  register_post_custom_field_type("shared_edits_editor_usernames", :json)
   topic_view_post_custom_fields_allowlister { [DiscourseSharedEdits::SHARED_EDITS_ENABLED] }
 
   add_to_serializer(:post, :shared_edits_enabled) do

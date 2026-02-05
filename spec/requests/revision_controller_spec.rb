@@ -5,6 +5,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
   fab!(:tl4_user) { Fabricate(:user, trust_level: TrustLevel[4]) }
   fab!(:post1) { Fabricate(:post, user: user, raw: "Hello World, testing shared edits") }
   fab!(:admin)
+  fab!(:group)
+  fab!(:private_category) { Fabricate(:private_category, group: group) }
+  fab!(:private_post) { Fabricate(:post, topic: Fabricate(:topic, category: private_category)) }
 
   describe "#enable" do
     context "when admin" do
@@ -39,6 +42,35 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         put "/shared_edits/p/#{post1.id}/enable"
         expect(response.status).to eq(403)
       end
+    end
+  end
+
+  describe "restricted category authorization" do
+    before { sign_in tl4_user }
+
+    it "returns 403 for enable on a post in a restricted category" do
+      put "/shared_edits/p/#{private_post.id}/enable"
+      expect(response.status).to eq(403)
+    end
+
+    it "returns 403 for disable on a post in a restricted category" do
+      put "/shared_edits/p/#{private_post.id}/disable"
+      expect(response.status).to eq(403)
+    end
+
+    it "returns 403 for health on a post in a restricted category" do
+      get "/shared_edits/p/#{private_post.id}/health"
+      expect(response.status).to eq(403)
+    end
+
+    it "returns 403 for recover on a post in a restricted category" do
+      post "/shared_edits/p/#{private_post.id}/recover"
+      expect(response.status).to eq(403)
+    end
+
+    it "returns 403 for reset on a post in a restricted category" do
+      post "/shared_edits/p/#{private_post.id}/reset"
+      expect(response.status).to eq(403)
     end
   end
 
@@ -497,6 +529,20 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: "test" }
 
       expect(response.status).to eq(404)
+    end
+
+    it "returns 409 when shared edits are disabled mid-session" do
+      SharedEditRevision.where(post_id: post1.id).delete_all
+
+      latest_state = DiscourseSharedEdits::Yjs.state_from_text("test")[:state]
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "new text"),
+          }
+
+      expect(response.status).to eq(409)
+      expect(response.parsed_body["error"]).to eq("not_initialized")
     end
 
     it "returns 403 when the user cannot edit the post" do

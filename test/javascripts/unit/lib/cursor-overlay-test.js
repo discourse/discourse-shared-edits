@@ -177,6 +177,50 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
     );
   });
 
+  test("removeCursor also clears activeTypists entry and timeout", function (assert) {
+    const cursor = overlay.createCursorElement({
+      user_id: 456,
+      username: "toremove",
+    });
+    overlay.cursors.set("client-to-remove", cursor);
+    overlay.container.appendChild(cursor.element);
+    overlay.markTypist("client-to-remove");
+
+    assert.true(
+      overlay.activeTypists.has("client-to-remove"),
+      "Typist entry exists before removal"
+    );
+
+    overlay.removeCursor("client-to-remove");
+
+    assert.false(
+      overlay.cursors.has("client-to-remove"),
+      "Cursor is removed from Map"
+    );
+    assert.false(
+      overlay.activeTypists.has("client-to-remove"),
+      "Typist entry is removed from Map"
+    );
+  });
+
+  test("destroy cancels pending typist timeouts", function (assert) {
+    const cursor1 = overlay.createCursorElement({
+      user_id: 1,
+      username: "user1",
+    });
+    overlay.cursors.set("client1", cursor1);
+    overlay.container.appendChild(cursor1.element);
+    overlay.markTypist("client1");
+
+    const typist = overlay.activeTypists.get("client1");
+    assert.true(Boolean(typist.timeout), "Timeout exists before destroy");
+
+    overlay.destroy();
+
+    assert.strictEqual(overlay.activeTypists.size, 0, "ActiveTypists cleared");
+    assert.strictEqual(overlay.cursors.size, 0, "Cursors cleared");
+  });
+
   test("markTypist sets timeout for cursor hiding", async function (assert) {
     const cursor = overlay.createCursorElement({
       user_id: 789,

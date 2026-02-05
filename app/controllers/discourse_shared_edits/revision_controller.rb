@@ -11,14 +11,18 @@ module ::DiscourseSharedEdits
     skip_before_action :preload_json, :check_xhr
 
     def enable
+      post = Post.find(params[:post_id].to_i)
+      guardian.ensure_can_see!(post)
       guardian.ensure_can_toggle_shared_edits!
-      SharedEditRevision.toggle_shared_edits!(params[:post_id].to_i, true)
+      SharedEditRevision.toggle_shared_edits!(post.id, true)
       render json: success_json
     end
 
     def disable
+      post = Post.find(params[:post_id].to_i)
+      guardian.ensure_can_see!(post)
       guardian.ensure_can_toggle_shared_edits!
-      SharedEditRevision.toggle_shared_edits!(params[:post_id].to_i, false)
+      SharedEditRevision.toggle_shared_edits!(post.id, false)
       render json: success_json
     end
 
@@ -45,7 +49,9 @@ module ::DiscourseSharedEdits
                    state: revision.raw,
                    message_bus_last_id: message_bus_last_id,
                  }
-        rescue StandardError => e
+        rescue MiniRacer::RuntimeError,
+               MiniRacer::ParseError,
+               StateValidator::StateCorruptionError => e
           Rails.logger.warn(
             "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
           )
@@ -249,9 +255,20 @@ module ::DiscourseSharedEdits
       Rails.logger.info("[SharedEdits] State diverged for post #{params[:post_id]}: #{e.message}")
 
       render json: { error: "state_diverged", missing_update: e.missing_update }, status: :conflict
+    rescue StateValidator::SharedEditsNotInitializedError => e
+      Rails.logger.info(
+        "[SharedEdits] Shared edits not initialized for post #{params[:post_id]}: #{e.message}",
+      )
+
+      render json: {
+               error: "not_initialized",
+               message: I18n.t("shared_edits.errors.not_initialized"),
+             },
+             status: :conflict
     end
 
     def health
+      guardian.ensure_can_see!(@post)
       guardian.ensure_can_toggle_shared_edits!
 
       health = StateValidator.health_check(@post.id)
@@ -260,6 +277,7 @@ module ::DiscourseSharedEdits
     end
 
     def recover
+      guardian.ensure_can_see!(@post)
       guardian.ensure_can_toggle_shared_edits!
 
       # Staff-only endpoint, skip rate limiting since it's already protected by guardian
@@ -284,6 +302,7 @@ module ::DiscourseSharedEdits
     end
 
     def reset
+      guardian.ensure_can_see!(@post)
       guardian.ensure_can_toggle_shared_edits!
 
       new_version = SharedEditRevision.reset_history!(@post.id)

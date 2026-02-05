@@ -3,10 +3,11 @@
 require "base64"
 require "digest"
 require "mini_racer"
+require "monitor"
 
 module DiscourseSharedEdits
   module Yjs
-    LOCK = Mutex.new
+    LOCK = Monitor.new
 
     class << self
       def context
@@ -44,13 +45,25 @@ module DiscourseSharedEdits
           }
 
           if (!global.crypto) {
+            let _secureRandomPool = [];
+            let _secureRandomIndex = 0;
+
+            global._refillSecureRandomPool = function(bytes) {
+              _secureRandomPool = bytes;
+              _secureRandomIndex = 0;
+            };
+
             global.crypto = {
               getRandomValues(array) {
                 if (!array || typeof array.length !== "number") {
                   throw new Error("Expected typed array");
                 }
                 for (let i = 0; i < array.length; i++) {
-                  array[i] = Math.floor(Math.random() * 256);
+                  if (_secureRandomIndex < _secureRandomPool.length) {
+                    array[i] = _secureRandomPool[_secureRandomIndex++];
+                  } else {
+                    array[i] = Math.floor(Math.random() * 256);
+                  }
                 }
                 return array;
               },
@@ -192,39 +205,49 @@ module DiscourseSharedEdits
       end
 
       def state_from_text(text)
-        result = context.call("stateFromText", text)
-        { state: encode(result["state"]), text: result["text"] }
+        with_secure_random do
+          result = context.call("stateFromText", text)
+          { state: encode(result["state"]), text: result["text"] }
+        end
       end
 
       def apply_update(state_b64, update_b64)
-        result = context.call("applyUpdateToState", decode(state_b64), decode(update_b64))
-        { state: encode(result["state"]), text: result["text"] }
+        with_secure_random do
+          result = context.call("applyUpdateToState", decode(state_b64), decode(update_b64))
+          { state: encode(result["state"]), text: result["text"] }
+        end
       end
 
       def text_from_state(state_b64)
-        context.call("applyUpdateToState", decode(state_b64), [])["text"]
+        LOCK.synchronize { context.call("applyUpdateToState", decode(state_b64), [])["text"] }
       end
 
       def update_from_text_change(old_text, new_text)
-        result = context.call("updateFromTextChange", old_text, new_text)
-        { state: encode(result["state"]), update: encode(result["update"]) }
+        with_secure_random do
+          result = context.call("updateFromTextChange", old_text, new_text)
+          { state: encode(result["state"]), update: encode(result["update"]) }
+        end
       end
 
       def update_from_state(state_b64, new_text)
-        encode(context.call("updateFromState", decode(state_b64), new_text))
+        with_secure_random { encode(context.call("updateFromState", decode(state_b64), new_text)) }
       end
 
       def get_state_vector(state_b64)
-        context.call("getStateVector", decode(state_b64))
+        LOCK.synchronize { context.call("getStateVector", decode(state_b64)) }
       end
 
       def compare_state_vectors(client_sv, server_sv)
-        result = context.call("compareStateVectors", client_sv, server_sv)
-        { valid: result["valid"], missing: result["missing"] }
+        LOCK.synchronize do
+          result = context.call("compareStateVectors", client_sv, server_sv)
+          { valid: result["valid"], missing: result["missing"] }
+        end
       end
 
       def get_missing_update(server_state_b64, client_sv)
-        encode(context.call("getMissingUpdate", decode(server_state_b64), client_sv))
+        LOCK.synchronize do
+          encode(context.call("getMissingUpdate", decode(server_state_b64), client_sv))
+        end
       end
 
       def compute_state_hash(state_b64)
@@ -234,6 +257,13 @@ module DiscourseSharedEdits
       end
 
       private
+
+      def with_secure_random(&block)
+        LOCK.synchronize do
+          context.call("_refillSecureRandomPool", SecureRandom.random_bytes(256).bytes)
+          block.call
+        end
+      end
 
       def encode(array)
         Base64.strict_encode64(array.pack("C*"))

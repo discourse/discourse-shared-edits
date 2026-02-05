@@ -190,6 +190,13 @@ export default class CursorOverlay {
       cursor.element.remove();
       this.cursors.delete(clientId);
     }
+    const typist = this.activeTypists.get(clientId);
+    if (typist) {
+      if (typist.timeout) {
+        clearTimeout(typist.timeout);
+      }
+      this.activeTypists.delete(clientId);
+    }
   }
 
   clearPosition(clientId) {
@@ -212,6 +219,11 @@ export default class CursorOverlay {
     }
     this.container.remove();
     this.cursors.clear();
+    this.activeTypists.forEach((typist) => {
+      if (typist.timeout) {
+        clearTimeout(typist.timeout);
+      }
+    });
     this.activeTypists.clear();
   }
 }

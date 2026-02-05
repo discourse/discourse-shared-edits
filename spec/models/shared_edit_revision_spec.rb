@@ -118,7 +118,7 @@ RSpec.describe SharedEditRevision do
           client_id: "test",
           update: "some_update",
         )
-      }.to raise_error(StandardError, "shared edits not initialized")
+      }.to raise_error(DiscourseSharedEdits::StateValidator::SharedEditsNotInitializedError)
     end
 
     it "publishes to message bus" do
@@ -643,6 +643,48 @@ RSpec.describe SharedEditRevision do
         # The raw content should be the same (not snapshotted)
         expect(latest.raw).to eq(original_raw)
       end
+    end
+  end
+
+  describe "editor username custom field" do
+    fab!(:post) { Fabricate(:post, raw: "Original content that is long enough") }
+    fab!(:user1, :user) { Fabricate(:user, username: "editor_one") }
+    fab!(:user2, :user) { Fabricate(:user, username: "editor_two") }
+
+    it "stores editor usernames in custom field after commit" do
+      SharedEditRevision.toggle_shared_edits!(post.id, true)
+      fake_edit(post, user1.id, "Edit by user one long enough")
+
+      SharedEditRevision.commit!(post.id)
+
+      post.reload
+      stored = post.custom_fields["shared_edits_editor_usernames"]
+      expect(stored).to include("editor_one")
+    end
+
+    it "accumulates usernames across multiple commits" do
+      SharedEditRevision.toggle_shared_edits!(post.id, true)
+      fake_edit(post, user1.id, "Edit by user one long enough")
+      SharedEditRevision.commit!(post.id)
+
+      fake_edit(post, user2.id, "Edit by user two long enough")
+      SharedEditRevision.commit!(post.id)
+
+      post.reload
+      stored = post.custom_fields["shared_edits_editor_usernames"]
+      expect(stored).to include("editor_one")
+      expect(stored).to include("editor_two")
+    end
+
+    it "cleans up custom field when disabling shared edits" do
+      SharedEditRevision.toggle_shared_edits!(post.id, true)
+      fake_edit(post, user1.id, "Edit by user one long enough")
+      SharedEditRevision.commit!(post.id)
+
+      SharedEditRevision.toggle_shared_edits!(post.id, false)
+
+      post.reload
+      expect(post.custom_fields["shared_edits_editor_usernames"]).to be_blank
     end
   end
 

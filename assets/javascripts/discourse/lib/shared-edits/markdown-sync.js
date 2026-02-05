@@ -25,6 +25,7 @@ export default class MarkdownSync {
   // Callback for when selection ends with skipped updates
   onSelectionEnd = null;
   #isSelecting = false;
+  #detached = false;
   #selectionListenersAttached = false;
   #skippedUpdatesDuringSelection = false;
   #pendingRelativeSelection = null;
@@ -68,6 +69,9 @@ export default class MarkdownSync {
 
     if (hadSkippedUpdates && this.#syncOrigin) {
       requestAnimationFrame(() => {
+        if (this.#detached) {
+          return;
+        }
         const textareaSelection = this.getTextareaSelection();
         this.#isSelecting = false;
         this.#skippedUpdatesDuringSelection = false;
@@ -89,6 +93,7 @@ export default class MarkdownSync {
   // Lifecycle
 
   attach(doc, text, undoManager) {
+    this.#detached = false;
     this.#undoManager = undoManager;
     this.#attachSelectionListeners();
 
@@ -99,6 +104,8 @@ export default class MarkdownSync {
   }
 
   detach() {
+    this.#detached = true;
+    this.onSelectionEnd = null;
     this.#resetSpellcheckSuppression();
     this.#detachSelectionListeners();
 

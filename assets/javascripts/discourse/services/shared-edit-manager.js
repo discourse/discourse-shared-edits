@@ -125,8 +125,11 @@ export default class SharedEditManager extends Service {
       this.#yjsDocument?.doc,
       (fn) => {
         this.suppressComposerChange = true;
-        fn();
-        this.suppressComposerChange = false;
+        try {
+          fn();
+        } finally {
+          this.suppressComposerChange = false;
+        }
       }
     );
   };
@@ -486,8 +489,11 @@ export default class SharedEditManager extends Service {
           this.#yjsDocument.text,
           (fn) => {
             this.suppressComposerChange = true;
-            fn();
-            this.suppressComposerChange = false;
+            try {
+              fn();
+            } finally {
+              this.suppressComposerChange = false;
+            }
           }
         );
       };
@@ -841,8 +847,11 @@ export default class SharedEditManager extends Service {
     }
 
     this.suppressComposerChange = true;
-    this.composer.model.set("reply", next);
-    this.suppressComposerChange = false;
+    try {
+      this.composer.model.set("reply", next);
+    } finally {
+      this.suppressComposerChange = false;
+    }
     return true;
   }
 

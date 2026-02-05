@@ -11,7 +11,7 @@
 
 ## Scope & Feature Flags
 - Lives at `plugins/discourse-shared-edits`; everything here only runs when `SiteSetting.shared_edits_enabled` (defined in `config/settings.yml`) is true and the per-post custom field `shared_edits_enabled` has been toggled via `SharedEditRevision.toggle_shared_edits!`.
-- Guardian hook (`lib/discourse_shared_edits/guardian_extension.rb`) restricts enable/disable/reset/recover endpoints to staff or trust level 4+. Reuse `guardian.ensure_can_toggle_shared_edits!` for any new privileged action.
+- Guardian hook (`lib/discourse_shared_edits/guardian_extension.rb`) restricts enable/disable/reset/recover endpoints to staff or trust level 4+. Reuse `guardian.ensure_can_toggle_shared_edits!` for any new privileged action. Privileged endpoints must also call `guardian.ensure_can_see!(@post)` to prevent access to posts in restricted categories.
 - API routes live under `/shared_edits` (`plugin.rb`). Do not rename them without updating the Ember service and the Pretender fixtures in `test/javascripts`.
 
 ## Backend Architecture & Expectations
@@ -38,7 +38,7 @@
 ## Operational Tips & Utilities
 - Manual QA: `plugins/discourse-shared-edits/support/fake_writer` uses Playwright to simulate concurrent editors. Run `support/fake_writer POST_ID --speed=fast --headless=false` against a dev instance to reproduce race conditions before shipping protocol changes.
 - Message bus hygiene: `SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_*` caps backlog size/age. Keep any new channels under the same limits or we risk unbounded Redis usage.
-- Edit reasons: `SharedEditRevision.update_edit_reason` builds `shared_edits.reason` strings listing everyone who contributed between commits. If you change commit batching or editor attribution, update both the method and translations.
+- Edit reasons: `SharedEditRevision.update_edit_reason` builds `shared_edits.reason` strings listing everyone who contributed between commits. Editor usernames are stored structurally in the `shared_edits_editor_usernames` JSON post custom field (registered in `plugin.rb`) rather than parsed from the localized edit reason string. If you change commit batching or editor attribution, update both the method and translations.
 - Recovery workflow: corruption is surfaced in logs and bubbled to the client via `state_recovered` / `state_corrupted` error codes. When adding new error states, expose translated messaging in `config/locales/client.*` and wire them into the composer UI.
 - Selection sharing: the Ember service currently attempts to PUT `/shared_edits/p/:post_id/selection`. The endpoint is not implemented yet, so requests are best-effort and errors are ignored; reuse that route if you decide to ship cursor/selection sync so the client code does not need changing.
 - Knowledge sharing: keep this file current whenever you add new entry points, commands, or conventions. After completing any task that touches this plugin, spawn a review agent to compare your diff against `plugins/discourse-shared-edits/AGENTS.md` and confirm the instructions remain accurate.

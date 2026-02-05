@@ -57,6 +57,15 @@ module DiscourseSharedEdits
       end
     end
 
+    class SharedEditsNotInitializedError < StandardError
+      attr_reader :post_id
+
+      def initialize(message, post_id:)
+        @post_id = post_id
+        super(message)
+      end
+    end
+
     class << self
       def validate_state(state_b64)
         return { valid: false, text: nil, error: "State is nil" } if state_b64.nil?

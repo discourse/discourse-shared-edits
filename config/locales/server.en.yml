@@ -9,6 +9,7 @@ en:
       blank_state_rejected: "We blocked a collaborative edit because it would have erased the entire post. Please reopen the composer to refresh the shared document."
       invalid_update: "The update payload was malformed. Please refresh and try again."
       post_length_exceeded: "Post content exceeds maximum length (%{current}/%{max} characters)"
+      not_initialized: "Shared editing is not active on this post. Please refresh and try again."
   site_settings:
     shared_edits_enabled: Enable shared, collaborative, editing on designated posts.
     shared_edits_editor_mode: "Editor mode for shared edits: markdown uses plain text, rich uses the ProseMirror rich text editor."

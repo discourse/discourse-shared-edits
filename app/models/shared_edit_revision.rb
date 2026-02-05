@@ -47,17 +47,20 @@ class SharedEditRevision < ActiveRecord::Base
       init!(post)
       post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED] = true
     else
-      result = commit!(post_id)
-      if result.nil?
-        latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
-        if latest&.raw.present?
-          Rails.logger.warn(
-            "[SharedEdits] Disabling shared edits for post #{post_id} with uncommitted changes",
-          )
+      with_commit_lock(post_id) do
+        result = commit!(post_id)
+        if result.nil?
+          latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+          if latest&.raw.present?
+            Rails.logger.warn(
+              "[SharedEdits] Disabling shared edits for post #{post_id} with uncommitted changes",
+            )
+          end
         end
       end
       SharedEditRevision.where(post_id: post_id).delete_all
       post.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
+      post.custom_fields.delete("shared_edits_editor_usernames")
     end
     post.save_custom_fields
     post.publish_change_to_clients!(:acted)
@@ -177,14 +180,16 @@ class SharedEditRevision < ActiveRecord::Base
   def self.update_edit_reason(post, post_revision, new_usernames)
     return if new_usernames.empty?
 
+    existing_usernames = stored_editor_usernames(post)
+    combined_usernames = (existing_usernames + new_usernames).uniq
+
+    new_reason = I18n.t("shared_edits.reason", users: combined_usernames.join(", "))
+
     existing_reason = post_revision.modifications["edit_reason"]
     existing_reason = existing_reason[1] if existing_reason.is_a?(Array)
     existing_reason ||= ""
 
-    existing_usernames = parse_usernames_from_reason(existing_reason)
-    combined_usernames = (existing_usernames + new_usernames).uniq
-
-    new_reason = I18n.t("shared_edits.reason", users: combined_usernames.join(", "))
+    store_editor_usernames(post, combined_usernames)
 
     return if new_reason == existing_reason
 
@@ -194,24 +199,39 @@ class SharedEditRevision < ActiveRecord::Base
   end
   private_class_method :update_edit_reason
 
-  def self.parse_usernames_from_reason(reason)
-    return [] if reason.blank?
-
-    prefix = I18n.t("shared_edits.reason", users: "")
-    return [] unless reason.start_with?(prefix)
-
-    users_part = reason[prefix.length..]
-    users_part.split(",").map(&:strip).reject(&:blank?)
+  def self.stored_editor_usernames(post)
+    raw = post.custom_fields["shared_edits_editor_usernames"]
+    case raw
+    when Array
+      raw.map(&:to_s).reject(&:blank?)
+    when String
+      begin
+        parsed = JSON.parse(raw)
+        parsed.is_a?(Array) ? parsed.map(&:to_s).reject(&:blank?) : []
+      rescue JSON::ParserError
+        []
+      end
+    else
+      []
+    end
   end
-  private_class_method :parse_usernames_from_reason
+  private_class_method :stored_editor_usernames
+
+  def self.store_editor_usernames(post, usernames)
+    post.custom_fields["shared_edits_editor_usernames"] = usernames.uniq
+    post.save_custom_fields
+  end
+  private_class_method :store_editor_usernames
 
   def self.reset_history!(post_id)
     post = Post.find(post_id)
 
-    SharedEditRevision.transaction do
-      commit!(post_id)
-      SharedEditRevision.where(post_id: post_id).delete_all
-      init!(post)
+    with_commit_lock(post_id) do
+      SharedEditRevision.transaction do
+        commit!(post_id)
+        SharedEditRevision.where(post_id: post_id).delete_all
+        init!(post)
+      end
     end
 
     revision = SharedEditRevision.where(post_id: post_id).order("version desc").first
@@ -355,6 +375,10 @@ class SharedEditRevision < ActiveRecord::Base
     recent_revisions.each do |rev|
       result = DiscourseSharedEdits::Yjs.apply_update(fresh_state, rev.revision)
       fresh_state = result[:state]
+    rescue MiniRacer::RuntimeError, MiniRacer::ParseError => e
+      Rails.logger.warn(
+        "[SharedEdits] Skipping corrupted revision #{rev.id} (v#{rev.version}) during snapshot for post #{post_id}: #{e.message}",
+      )
     end
 
     # Update in place
@@ -404,7 +428,12 @@ class SharedEditRevision < ActiveRecord::Base
     begin
       SharedEditRevision.transaction do
         latest = SharedEditRevision.where(post_id: post_id).lock.order("version desc").first
-        raise StandardError, "shared edits not initialized" if !latest
+        if !latest
+          raise DiscourseSharedEdits::StateValidator::SharedEditsNotInitializedError.new(
+                  "shared edits not initialized",
+                  post_id: post_id,
+                )
+        end
 
         applied =
           DiscourseSharedEdits::StateValidator.safe_apply_update(
