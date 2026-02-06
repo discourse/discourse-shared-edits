@@ -218,6 +218,24 @@ RSpec.describe SharedEditRevision do
         SharedEditRevision::MAX_HISTORY_COUNT
     end
 
+    it "does not commit content exceeding max_post_length even if state was tampered" do
+      SharedEditRevision.init!(post)
+      original_raw = post.raw
+      old_max = SiteSetting.max_post_length
+      SiteSetting.max_post_length = 100
+
+      long_text = "x" * 200
+      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      latest.update_column(:raw, DiscourseSharedEdits::Yjs.state_from_text(long_text)[:state])
+
+      result = SharedEditRevision.commit!(post.id)
+
+      expect(result).to be_nil
+      expect(post.reload.raw).to eq(original_raw)
+    ensure
+      SiteSetting.max_post_length = old_max
+    end
+
     it "maintains valid ydoc state after compaction" do
       SharedEditRevision.init!(post)
       user = Fabricate(:user)
@@ -625,6 +643,32 @@ RSpec.describe SharedEditRevision do
           resync_messages = messages.select { |m| m.data[:action] == "resync" }
           expect(resync_messages).not_to be_empty
         end
+      end
+    end
+
+    it "broadcasts resync when snapshot skips corrupted recent revisions" do
+      stub_const(DiscourseSharedEdits::StateValidator, "SNAPSHOT_THRESHOLD_BYTES", 100.megabytes) do
+        SharedEditRevision.init!(post)
+
+        3.times { |i| fake_edit(post, user.id, "Edit #{i + 1}") }
+
+        corrupted_revision =
+          SharedEditRevision
+            .where(post_id: post.id)
+            .where.not(revision: ["", nil])
+            .order("version asc")
+            .first
+        corrupted_revision.update_column(:revision, "not-base64")
+
+        allow(DiscourseSharedEdits::StateValidator).to receive(:should_snapshot?).and_return(true)
+
+        messages =
+          MessageBus.track_publish("/shared_edits/#{post.id}") do
+            SharedEditRevision.commit!(post.id)
+          end
+
+        resync_messages = messages.select { |m| m.data[:action] == "resync" }
+        expect(resync_messages).not_to be_empty
       end
     end
 

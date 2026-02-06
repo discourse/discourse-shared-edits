@@ -171,6 +171,11 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
     it "returns false for invalid base64" do
       expect(described_class.should_snapshot?("not-valid-base64!!!")).to eq(false)
     end
+
+    it "returns false for large invalid base64 payloads" do
+      invalid_state = "not-base64" * 20_000
+      expect(described_class.should_snapshot?(invalid_state)).to eq(false)
+    end
   end
 
   describe ".validate_update" do
@@ -307,15 +312,16 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       SharedEditRevision.init!(post)
       revision = SharedEditRevision.find_by(post_id: post.id)
       revision.update_column(:raw, Base64.strict_encode64("corrupted"))
+      initial_version = revision.version
 
       result = described_class.recover_from_post_raw(post.id)
 
       expect(result[:success]).to eq(true)
       expect(result[:message]).to include("recovered")
-      expect(result[:new_version]).to eq(1)
+      expect(result[:new_version]).to eq(initial_version + 1)
 
       # Verify the new state is valid
-      new_revision = SharedEditRevision.find_by(post_id: post.id)
+      new_revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
       text = DiscourseSharedEdits::Yjs.text_from_state(new_revision.raw)
       expect(text).to eq(post.raw)
     end
@@ -344,7 +350,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       expect(result[:message]).to eq("Post not found")
     end
 
-    it "deletes all existing revisions during recovery" do
+    it "preserves existing revisions and appends a recovery revision" do
       SharedEditRevision.init!(post)
       user = Fabricate(:user)
 
@@ -358,7 +364,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
         update: update,
       )
 
-      expect(SharedEditRevision.where(post_id: post.id).count).to eq(2)
+      initial_count = SharedEditRevision.where(post_id: post.id).count
 
       # Corrupt the state
       SharedEditRevision
@@ -370,7 +376,59 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       result = described_class.recover_from_post_raw(post.id)
 
       expect(result[:success]).to eq(true)
-      expect(SharedEditRevision.where(post_id: post.id).count).to eq(1)
+      expect(SharedEditRevision.where(post_id: post.id).count).to eq(initial_count + 1)
+      latest_revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      expect(latest_revision.client_id).to eq("recovery")
+    end
+
+    it "uses the shared edits commit lock during recovery" do
+      SharedEditRevision.init!(post)
+
+      allow(SharedEditRevision).to receive(:with_commit_lock).and_call_original
+
+      described_class.recover_from_post_raw(post.id, force: true, skip_rate_limit: true)
+
+      expect(SharedEditRevision).to have_received(:with_commit_lock).with(post.id)
+    end
+  end
+
+  describe "recovery cooldown atomicity" do
+    fab!(:post) { Fabricate(:post, raw: "Atomicity test content") }
+
+    it "allows only one concurrent recovery cooldown acquisition" do
+      cooldown_key = "shared_edits_recovery_cooldown_#{post.id}"
+      counter_key = "shared_edits_recovery_count_#{post.id}"
+
+      Discourse.redis.del(cooldown_key)
+      Discourse.redis.del(counter_key)
+
+      mutex = Mutex.new
+      condition = ConditionVariable.new
+      arrivals = 0
+
+      allow(Discourse.redis).to receive(:exists?).and_wrap_original do
+        mutex.synchronize do
+          arrivals += 1
+          condition.broadcast if arrivals == 2
+          condition.wait(mutex) if arrivals < 2
+        end
+        false
+      end
+
+      results = []
+      threads =
+        2.times.map do
+          Thread.new do
+            result = described_class.send(:check_recovery_rate_limit, post.id)
+            mutex.synchronize { results << result }
+          end
+        end
+      threads.each(&:join)
+
+      expect(results.count { |result| result[:allowed] }).to eq(1)
+    ensure
+      Discourse.redis.del(cooldown_key)
+      Discourse.redis.del(counter_key)
     end
   end
 
@@ -551,7 +609,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       result = described_class.recover_from_post_raw(post.id)
       expect(result[:success]).to eq(true)
 
-      new_revision = SharedEditRevision.find_by(post_id: post.id)
+      new_revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
       expect(DiscourseSharedEdits::Yjs.text_from_state(new_revision.raw)).to eq("")
     end
 
@@ -562,8 +620,44 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       result = described_class.recover_from_post_raw(post.id, force: true)
       expect(result[:success]).to eq(true)
 
-      new_revision = SharedEditRevision.find_by(post_id: post.id)
+      new_revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
       expect(DiscourseSharedEdits::Yjs.text_from_state(new_revision.raw)).to eq("Hello 🌍🎉 世界 مرحبا")
+    end
+  end
+
+  describe ".recover_from_text" do
+    fab!(:post) { Fabricate(:post, raw: "Text recovery content") }
+
+    it "uses the shared edits commit lock during text recovery" do
+      allow(SharedEditRevision).to receive(:with_commit_lock).and_call_original
+
+      described_class.recover_from_text(post.id, "Recovered text")
+
+      expect(SharedEditRevision).to have_received(:with_commit_lock).with(post.id)
+    end
+
+    it "preserves existing revisions and appends a text recovery revision" do
+      SharedEditRevision.init!(post)
+      user = Fabricate(:user)
+
+      state = SharedEditRevision.where(post_id: post.id).order("version desc").first.raw
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "Existing edit")
+      SharedEditRevision.revise!(
+        post_id: post.id,
+        user_id: user.id,
+        client_id: "test",
+        update: update,
+      )
+
+      initial_count = SharedEditRevision.where(post_id: post.id).count
+
+      result = described_class.recover_from_text(post.id, "Recovered text")
+
+      expect(result[:success]).to eq(true)
+      expect(SharedEditRevision.where(post_id: post.id).count).to eq(initial_count + 1)
+      latest_revision = SharedEditRevision.where(post_id: post.id).order("version desc").first
+      expect(latest_revision.client_id).to eq("recovery")
+      expect(DiscourseSharedEdits::Yjs.text_from_state(latest_revision.raw)).to eq("Recovered text")
     end
   end
 end

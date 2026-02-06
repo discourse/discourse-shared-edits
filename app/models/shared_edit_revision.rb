@@ -46,24 +46,36 @@ class SharedEditRevision < ActiveRecord::Base
     if enable
       init!(post)
       post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED] = true
+      post.save_custom_fields
+      post.publish_change_to_clients!(:acted)
+      true
     else
+      disable_failed = false
       with_commit_lock(post_id) do
         result = commit!(post_id)
         if result.nil?
           latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
-          if latest&.raw.present?
+          if latest&.raw.present? && latest.post_revision_id.nil?
             Rails.logger.warn(
               "[SharedEdits] Disabling shared edits for post #{post_id} with uncommitted changes",
             )
+            disable_failed = true
           end
         end
+
+        next if disable_failed
+
+        SharedEditRevision.where(post_id: post_id).delete_all
+        post.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
+        post.custom_fields.delete("shared_edits_editor_usernames")
       end
-      SharedEditRevision.where(post_id: post_id).delete_all
-      post.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
-      post.custom_fields.delete("shared_edits_editor_usernames")
+
+      return false if disable_failed
+
+      post.save_custom_fields
+      post.publish_change_to_clients!(:acted)
+      true
     end
-    post.save_custom_fields
-    post.publish_change_to_clients!(:acted)
   end
 
   def self.init!(post)
@@ -99,6 +111,14 @@ class SharedEditRevision < ActiveRecord::Base
     raw = validation[:text]
 
     return raw unless apply_to_post
+
+    max_length = SiteSetting.max_post_length
+    if raw.length > max_length
+      Rails.logger.warn(
+        "[SharedEdits] Cannot commit post #{post_id}: text length #{raw.length} exceeds max_post_length #{max_length}",
+      )
+      return nil
+    end
 
     post = Post.find(post_id)
     topic = post.topic
@@ -226,13 +246,28 @@ class SharedEditRevision < ActiveRecord::Base
   def self.reset_history!(post_id)
     post = Post.find(post_id)
 
+    reset_failed = false
+
     with_commit_lock(post_id) do
       SharedEditRevision.transaction do
-        commit!(post_id)
+        result = commit!(post_id)
+        if result.nil?
+          latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+          if latest&.raw.present? && latest.post_revision_id.nil?
+            Rails.logger.warn(
+              "[SharedEdits] Reset blocked for post #{post_id} because pending changes could not be committed",
+            )
+            reset_failed = true
+            raise ActiveRecord::Rollback
+          end
+        end
+
         SharedEditRevision.where(post_id: post_id).delete_all
         init!(post)
       end
     end
+
+    return nil if reset_failed
 
     revision = SharedEditRevision.where(post_id: post_id).order("version desc").first
     revision&.version
@@ -363,6 +398,7 @@ class SharedEditRevision < ActiveRecord::Base
 
     # Check if we need to truncate to message bus size limit
     needs_resync = all_recent.count > MESSAGE_BUS_MAX_BACKLOG_SIZE
+    skipped_corrupted_revisions = 0
 
     # Take only what message bus can hold, then reverse to apply in order
     recent_revisions = all_recent.limit(MESSAGE_BUS_MAX_BACKLOG_SIZE).to_a.reverse
@@ -375,7 +411,8 @@ class SharedEditRevision < ActiveRecord::Base
     recent_revisions.each do |rev|
       result = DiscourseSharedEdits::Yjs.apply_update(fresh_state, rev.revision)
       fresh_state = result[:state]
-    rescue MiniRacer::RuntimeError, MiniRacer::ParseError => e
+    rescue MiniRacer::RuntimeError, MiniRacer::ParseError, ArgumentError => e
+      skipped_corrupted_revisions += 1
       Rails.logger.warn(
         "[SharedEdits] Skipping corrupted revision #{rev.id} (v#{rev.version}) during snapshot for post #{post_id}: #{e.message}",
       )
@@ -395,6 +432,13 @@ class SharedEditRevision < ActiveRecord::Base
       "[SharedEdits] Snapshotted state for post #{post_id} v#{latest.version}: " \
         "#{original_size} -> #{new_size} bytes (preserved #{recent_revisions.count} recent updates)",
     )
+
+    if skipped_corrupted_revisions > 0
+      needs_resync = true
+      Rails.logger.warn(
+        "[SharedEdits] Snapshot skipped #{skipped_corrupted_revisions} corrupted revisions for post #{post_id}; forcing resync",
+      )
+    end
 
     # If we had to truncate history beyond message bus limits, force resync
     # so all clients get the new baseline state
@@ -471,11 +515,10 @@ class SharedEditRevision < ActiveRecord::Base
           max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
         )
 
-        # Return the most recently computed state_hash for sync verification.
-        # This hash is from the most recently committed revision (computed during
-        # commit!), not the newly created revision. Clients use this as a sync
-        # target and forward MessageBus updates until their local hash matches.
-        state_hash = latest.respond_to?(:state_hash) ? latest.state_hash : nil
+        # Persist and return the hash for the revision we just created so clients
+        # can verify sync against the current authoritative state.
+        update_state_hash!(revision)
+        state_hash = revision.respond_to?(:state_hash) ? revision.state_hash : nil
         [revision.version, update, state_hash]
       end
     rescue ActiveRecord::RecordNotUnique => e
@@ -492,7 +535,7 @@ class SharedEditRevision < ActiveRecord::Base
         raise
       end
     end
-  rescue MiniRacer::RuntimeError, MiniRacer::ParseError => e
+  rescue MiniRacer::RuntimeError, MiniRacer::ParseError, ArgumentError => e
     raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
             "Yjs operation failed: #{e.message}",
             post_id: post_id,

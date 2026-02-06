@@ -45,6 +45,10 @@ RSpec.describe DiscourseSharedEdits::Yjs do
 
       expect(described_class.text_from_state(state)).to eq(original)
     end
+
+    it "raises ArgumentError for invalid base64 state" do
+      expect { described_class.text_from_state("not-base64") }.to raise_error(ArgumentError)
+    end
   end
 
   describe ".update_from_text_change" do
@@ -269,6 +273,10 @@ RSpec.describe DiscourseSharedEdits::Yjs do
       expect(described_class.compute_state_hash("")).to be_nil
     end
 
+    it "returns nil for invalid base64 state" do
+      expect(described_class.compute_state_hash("not-base64")).to be_nil
+    end
+
     it "produces consistent hash after applying update" do
       state1 = described_class.state_from_text("Hello")[:state]
       update = described_class.update_from_state(state1, "Hello World")
@@ -278,6 +286,24 @@ RSpec.describe DiscourseSharedEdits::Yjs do
 
       expect(hash).to be_present
       expect(hash).to match(/\A[0-9a-f]{64}\z/)
+    end
+  end
+
+  describe ".create_context" do
+    it "selects the latest hashed yjs bundle deterministically" do
+      fake_ctx = instance_double(MiniRacer::Context)
+      allow(MiniRacer::Context).to receive(:new).and_return(fake_ctx)
+      allow(fake_ctx).to receive(:eval)
+
+      allow(Dir).to receive(:glob).and_return(
+        %w[/tmp/yjs-dist-111111111111.js /tmp/yjs-dist-999999999999.js],
+      )
+
+      allow(File).to receive(:read).and_return("// yjs")
+
+      described_class.send(:create_context)
+
+      expect(File).to have_received(:read).with("/tmp/yjs-dist-999999999999.js")
     end
   end
 end

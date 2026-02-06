@@ -107,7 +107,7 @@ module DiscourseSharedEdits
       def should_snapshot?(state_b64)
         return false if state_b64.blank?
 
-        state_bytes = Base64.decode64(state_b64).bytesize
+        state_bytes = Base64.strict_decode64(state_b64).bytesize
         state_bytes > SNAPSHOT_THRESHOLD_BYTES
       rescue ArgumentError
         false
@@ -249,34 +249,40 @@ module DiscourseSharedEdits
           end
         end
 
-        SharedEditRevision.transaction do
-          SharedEditRevision.where(post_id: post_id).delete_all
+        SharedEditRevision.with_commit_lock(post_id) do
+          SharedEditRevision.transaction do
+            next_version = (SharedEditRevision.where(post_id: post_id).maximum(:version) || 0) + 1
 
-          initial_state = DiscourseSharedEdits::Yjs.state_from_text(post.raw)
+            initial_state = DiscourseSharedEdits::Yjs.state_from_text(post.raw)
 
-          revision =
-            SharedEditRevision.create!(
-              post_id: post_id,
-              client_id: "recovery",
-              user_id: Discourse.system_user.id,
-              version: 1,
-              revision: "",
-              raw: initial_state[:state],
-              post_revision_id: SharedEditRevision.last_revision_id_for_post(post),
-            )
+            revision =
+              SharedEditRevision.create!(
+                post_id: post_id,
+                client_id: "recovery",
+                user_id: Discourse.system_user.id,
+                version: next_version,
+                revision: "",
+                raw: initial_state[:state],
+                post_revision_id: SharedEditRevision.last_revision_id_for_post(post),
+              )
 
-          validation = validate_state(revision.raw)
-          unless validation[:valid]
-            raise StateCorruptionError.new(
-                    "Recovery failed: new state is also invalid",
-                    post_id: post_id,
-                    recovery_attempted: true,
-                  )
+            validation = validate_state(revision.raw)
+            unless validation[:valid]
+              raise StateCorruptionError.new(
+                      "Recovery failed: new state is also invalid",
+                      post_id: post_id,
+                      recovery_attempted: true,
+                    )
+            end
+
+            Rails.logger.info("[SharedEdits] Recovered state for post #{post_id} from post.raw")
+
+            {
+              success: true,
+              message: "State recovered from post.raw",
+              new_version: revision.version,
+            }
           end
-
-          Rails.logger.info("[SharedEdits] Recovered state for post #{post_id} from post.raw")
-
-          { success: true, message: "State recovered from post.raw", new_version: revision.version }
         end
       rescue ActiveRecord::RecordInvalid => e
         { success: false, message: "Database error: #{e.message}" }
@@ -301,38 +307,40 @@ module DiscourseSharedEdits
           return { success: false, message: rate_limit_result[:message] }
         end
 
-        SharedEditRevision.transaction do
-          SharedEditRevision.where(post_id: post_id).delete_all
+        SharedEditRevision.with_commit_lock(post_id) do
+          SharedEditRevision.transaction do
+            next_version = (SharedEditRevision.where(post_id: post_id).maximum(:version) || 0) + 1
 
-          initial_state = DiscourseSharedEdits::Yjs.state_from_text(text)
+            initial_state = DiscourseSharedEdits::Yjs.state_from_text(text)
 
-          revision =
-            SharedEditRevision.create!(
-              post_id: post_id,
-              client_id: "recovery",
-              user_id: Discourse.system_user.id,
-              version: 1,
-              revision: "",
-              raw: initial_state[:state],
-              post_revision_id: nil,
-            )
+            revision =
+              SharedEditRevision.create!(
+                post_id: post_id,
+                client_id: "recovery",
+                user_id: Discourse.system_user.id,
+                version: next_version,
+                revision: "",
+                raw: initial_state[:state],
+                post_revision_id: nil,
+              )
 
-          validation = validate_state(revision.raw)
-          unless validation[:valid]
-            raise StateCorruptionError.new(
-                    "Recovery failed: generated state is invalid",
-                    post_id: post_id,
-                    recovery_attempted: true,
-                  )
+            validation = validate_state(revision.raw)
+            unless validation[:valid]
+              raise StateCorruptionError.new(
+                      "Recovery failed: generated state is invalid",
+                      post_id: post_id,
+                      recovery_attempted: true,
+                    )
+            end
+
+            Rails.logger.info("[SharedEdits] Recovered state for post #{post_id} from client text")
+
+            {
+              success: true,
+              message: "State recovered from client text",
+              new_version: revision.version,
+            }
           end
-
-          Rails.logger.info("[SharedEdits] Recovered state for post #{post_id} from client text")
-
-          {
-            success: true,
-            message: "State recovered from client text",
-            new_version: revision.version,
-          }
         end
       rescue ActiveRecord::RecordInvalid => e
         { success: false, message: "Database error: #{e.message}" }
@@ -399,16 +407,6 @@ module DiscourseSharedEdits
         cooldown_key = "shared_edits_recovery_cooldown_#{post_id}"
         counter_key = "shared_edits_recovery_count_#{post_id}"
 
-        if Discourse.redis.exists?(cooldown_key)
-          ttl = Discourse.redis.ttl(cooldown_key)
-          return(
-            {
-              allowed: false,
-              message: "Recovery rate limited. Please wait #{ttl} seconds before trying again.",
-            }
-          )
-        end
-
         count = Discourse.redis.get(counter_key).to_i
         if count >= MAX_RECOVERY_ATTEMPTS_PER_HOUR
           ttl = Discourse.redis.ttl(counter_key)
@@ -422,7 +420,18 @@ module DiscourseSharedEdits
           )
         end
 
-        Discourse.redis.setex(cooldown_key, RECOVERY_RATE_LIMIT_SECONDS, "1")
+        cooldown_acquired =
+          Discourse.redis.set(cooldown_key, "1", ex: RECOVERY_RATE_LIMIT_SECONDS, nx: true)
+        unless cooldown_acquired
+          ttl = Discourse.redis.ttl(cooldown_key)
+          return(
+            {
+              allowed: false,
+              message: "Recovery rate limited. Please wait #{ttl} seconds before trying again.",
+            }
+          )
+        end
+
         Discourse.redis.multi do |multi|
           multi.incr(counter_key)
           multi.expire(counter_key, 1.hour.to_i)

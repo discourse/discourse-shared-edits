@@ -22,7 +22,15 @@ module ::DiscourseSharedEdits
       post = Post.find(params[:post_id].to_i)
       guardian.ensure_can_see!(post)
       guardian.ensure_can_toggle_shared_edits!
-      SharedEditRevision.toggle_shared_edits!(post.id, false)
+      disabled = SharedEditRevision.toggle_shared_edits!(post.id, false)
+      if !disabled
+        render json: {
+                 error: "disable_failed",
+                 message: I18n.t("shared_edits.errors.disable_failed"),
+               },
+               status: :unprocessable_entity
+        return
+      end
       render json: success_json
     end
 
@@ -51,12 +59,12 @@ module ::DiscourseSharedEdits
                  }
         rescue MiniRacer::RuntimeError,
                MiniRacer::ParseError,
+               ArgumentError,
                StateValidator::StateCorruptionError => e
           Rails.logger.warn(
             "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
           )
-          recovery =
-            StateValidator.recover_from_post_raw(@post.id, force: true, skip_rate_limit: true)
+          recovery = StateValidator.recover_from_post_raw(@post.id, force: true)
           if recovery[:success]
             revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
 
@@ -90,7 +98,17 @@ module ::DiscourseSharedEdits
       params.require(:post_id)
 
       guardian.ensure_can_edit!(@post)
-      SharedEditRevision.with_commit_lock(@post.id) { SharedEditRevision.commit!(@post.id) }
+      commit_result =
+        SharedEditRevision.with_commit_lock(@post.id) { SharedEditRevision.commit!(@post.id) }
+
+      if commit_result.nil?
+        render json: {
+                 error: "commit_failed",
+                 message: I18n.t("shared_edits.errors.commit_failed"),
+               },
+               status: :unprocessable_entity
+        return
+      end
 
       render json: success_json
     end
@@ -102,6 +120,17 @@ module ::DiscourseSharedEdits
 
       if params[:recovery_text].present?
         RateLimiter.new(current_user, "shared-edit-recover-#{@post.id}", 20, 1.minute).performed!
+
+        health = StateValidator.health_check(@post.id)
+        if health[:state] == :initialized && health[:healthy]
+          render json: {
+                   error: "recovery_not_needed",
+                   message: I18n.t("shared_edits.errors.recovery_not_needed"),
+                 },
+                 status: :conflict
+          return
+        end
+
         recovery = StateValidator.recover_from_text(@post.id, params[:recovery_text])
         if recovery[:success]
           @post.publish_message!(
@@ -306,6 +335,14 @@ module ::DiscourseSharedEdits
       guardian.ensure_can_toggle_shared_edits!
 
       new_version = SharedEditRevision.reset_history!(@post.id)
+      if new_version.nil?
+        render json: {
+                 error: "reset_failed",
+                 message: I18n.t("shared_edits.errors.reset_failed"),
+               },
+               status: :unprocessable_entity
+        return
+      end
 
       @post.publish_message!(
         SharedEditRevision.message_bus_channel(@post.id),

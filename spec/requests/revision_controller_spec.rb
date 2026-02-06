@@ -87,6 +87,31 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         post1.reload
         expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to be_nil
       end
+
+      it "does not disable shared edits when pending changes cannot be committed" do
+        SharedEditRevision.toggle_shared_edits!(post1.id, true)
+        state = SharedEditRevision.where(post_id: post1.id).order("version desc").first.raw
+        update = DiscourseSharedEdits::Yjs.update_from_state(state, "pending change")
+
+        SharedEditRevision.revise!(
+          post_id: post1.id,
+          user_id: user.id,
+          client_id: "test",
+          update: update,
+        )
+
+        revision_count = SharedEditRevision.where(post_id: post1.id).count
+        post1.topic.update!(closed: true)
+
+        put "/shared_edits/p/#{post1.id}/disable"
+
+        expect(response.status).to eq(422)
+        expect(response.parsed_body["error"]).to eq("disable_failed")
+
+        post1.reload
+        expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to eq(true)
+        expect(SharedEditRevision.where(post_id: post1.id).count).to eq(revision_count)
+      end
     end
 
     context "when regular user" do
@@ -227,6 +252,30 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       put "/shared_edits/p/#{post1.id}/commit"
       expect(response.status).to eq(404)
     end
+
+    it "returns an error when commit cannot be applied to a closed topic" do
+      SharedEditRevision.toggle_shared_edits!(post1.id, true)
+      original_raw = post1.raw
+      new_text = "pending shared edit on closed topic"
+      state = SharedEditRevision.where(post_id: post1.id).order("version desc").first.raw
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, new_text)
+
+      SharedEditRevision.revise!(
+        post_id: post1.id,
+        user_id: user.id,
+        client_id: "test",
+        update: update,
+      )
+
+      post1.topic.update!(closed: true)
+
+      put "/shared_edits/p/#{post1.id}/commit"
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to eq("commit_failed")
+      post1.reload
+      expect(post1.raw).to eq(original_raw)
+    end
   end
 
   describe "#revise" do
@@ -256,23 +305,24 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(post1.raw[0..3]).to eq("1234")
     end
 
-    it "includes state_hash in response after commit computes it" do
+    it "returns state_hash for the revision created by each update" do
       new_text = "1234" + post1.raw[4..]
       latest_state = latest_state_for(post1)
 
-      # First update - no state_hash yet (computed during commit)
       put "/shared_edits/p/#{post1.id}",
           params: {
             client_id: "abc",
             update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
           }
       expect(response.status).to eq(200)
-      expect(response.parsed_body["state_hash"]).to be_nil
+      state_hash = response.parsed_body["state_hash"]
+      latest_revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
+      expected_hash = DiscourseSharedEdits::Yjs.compute_state_hash(latest_revision.raw)
+      expect(state_hash).to eq(expected_hash)
 
       # Commit to compute state_hash
       SharedEditRevision.commit!(post1.id)
 
-      # Second update - should include state_hash from previous commit
       latest_state = latest_state_for(post1)
       new_text = "5678" + post1.raw[4..]
       put "/shared_edits/p/#{post1.id}",
@@ -282,8 +332,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           }
       expect(response.status).to eq(200)
       state_hash = response.parsed_body["state_hash"]
-      expect(state_hash).to be_present
-      expect(state_hash).to match(/\A[0-9a-f]{64}\z/)
+      latest_revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
+      expected_hash = DiscourseSharedEdits::Yjs.compute_state_hash(latest_revision.raw)
+      expect(state_hash).to eq(expected_hash)
     end
 
     it "rejects blanking a post without explicit allow flag" do
@@ -505,6 +556,35 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       end
     end
 
+    it "rejects recovery text when state is healthy" do
+      initial_count = SharedEditRevision.where(post_id: post1.id).count
+      initial_state = latest_state_for(post1)
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: "abc",
+            recovery_text: "attempted overwrite from healthy state",
+          }
+
+      expect(response.status).to eq(409)
+      expect(response.parsed_body["error"]).to eq("recovery_not_needed")
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
+      expect(latest_state_for(post1)).to eq(initial_state)
+    end
+
+    it "rejects whitespace-only recovery text before recovery path" do
+      # Corrupt state to enter recovery path
+      revision = SharedEditRevision.where(post_id: post1.id).first
+      revision.update_column(:raw, Base64.strict_encode64("corrupted data"))
+
+      initial_count = SharedEditRevision.where(post_id: post1.id).count
+
+      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", recovery_text: "   " }
+
+      expect(response.status).to eq(400)
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
+    end
+
     it "recovers state when client provides recovery text" do
       # Corrupt the state
       revision = SharedEditRevision.where(post_id: post1.id).first
@@ -629,6 +709,22 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       ensure
         RateLimiter.disable
       end
+
+      it "applies recovery rate limits even when recovery is not needed" do
+        RateLimiter.enable
+
+        21.times do
+          put "/shared_edits/p/#{post1.id}",
+              params: {
+                client_id: "abc",
+                recovery_text: "redundant recovery request",
+              }
+        end
+
+        expect(response.status).to eq(429)
+      ensure
+        RateLimiter.disable
+      end
     end
   end
 
@@ -746,7 +842,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
     end
 
     it "automatically recovers corrupted state on access" do
-      revision = SharedEditRevision.where(post_id: post1.id).first
+      revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
       revision.update_column(:raw, Base64.strict_encode64("corrupted"))
 
       get "/shared_edits/p/#{post1.id}"
@@ -754,7 +850,21 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(response.status).to eq(200)
       body = response.parsed_body
       expect(body["raw"]).to eq(post1.raw)
-      expect(body["version"]).to eq(1)
+      expect(body["version"]).to eq(2)
+    end
+
+    it "does not bypass recovery rate limiting on repeated auto-recoveries" do
+      revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
+      revision.update_column(:raw, Base64.strict_encode64("corrupted once"))
+
+      get "/shared_edits/p/#{post1.id}"
+      expect(response.status).to eq(200)
+
+      revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
+      revision.update_column(:raw, Base64.strict_encode64("corrupted twice"))
+
+      get "/shared_edits/p/#{post1.id}"
+      expect(response.status).to eq(403)
     end
   end
 
@@ -823,6 +933,26 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         expect(response.status).to eq(200)
         post1.reload
         expect(post1.raw).to eq(new_content)
+      end
+
+      it "does not reset history when pending changes cannot be committed" do
+        state = latest_state_for(post1)
+        update = DiscourseSharedEdits::Yjs.update_from_state(state, "pending change before reset")
+        SharedEditRevision.revise!(
+          post_id: post1.id,
+          user_id: admin.id,
+          client_id: "test",
+          update: update,
+        )
+
+        revision_count = SharedEditRevision.where(post_id: post1.id).count
+        post1.topic.update!(closed: true)
+
+        post "/shared_edits/p/#{post1.id}/reset"
+
+        expect(response.status).to eq(422)
+        expect(response.parsed_body["error"]).to eq("reset_failed")
+        expect(SharedEditRevision.where(post_id: post1.id).count).to eq(revision_count)
       end
     end
 

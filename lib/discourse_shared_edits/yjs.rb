@@ -79,7 +79,7 @@ module DiscourseSharedEdits
         JS
 
         public_dir = File.expand_path("../../public/javascripts", __dir__)
-        yjs_path = Dir.glob(File.join(public_dir, "yjs-dist-*.js")).first
+        yjs_path = Dir.glob(File.join(public_dir, "yjs-dist-*.js")).sort.last
         raise "yjs-dist bundle not found" unless yjs_path
         ctx.eval(File.read(yjs_path))
 
@@ -252,8 +252,10 @@ module DiscourseSharedEdits
 
       def compute_state_hash(state_b64)
         return nil if state_b64.blank?
-        decoded = Base64.decode64(state_b64)
+        decoded = Base64.strict_decode64(state_b64)
         Digest::SHA256.hexdigest(decoded)
+      rescue ArgumentError
+        nil
       end
 
       private
@@ -270,7 +272,7 @@ module DiscourseSharedEdits
       end
 
       def decode(str)
-        Base64.decode64(str.to_s).bytes
+        Base64.strict_decode64(str.to_s).bytes
       end
     end
   end
