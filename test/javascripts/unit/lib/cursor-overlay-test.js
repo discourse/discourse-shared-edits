@@ -56,11 +56,7 @@ module("Unit | Lib | cursor-overlay", function (hooks) {
       "testuser",
       "Label shows username"
     );
-    assert.strictEqual(
-      cursor.user.username,
-      "testuser",
-      "User data is stored"
-    );
+    assert.strictEqual(cursor.user.username, "testuser", "User data is stored");
     assert.strictEqual(cursor.user.user_id, 123, "User ID is stored");
   });
 

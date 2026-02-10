@@ -41,7 +41,9 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
     assert.true(consoleStub.calledOnce, "logs a warning");
     assert.true(doc.transact.notCalled, "does not mutate the Yjs document");
     assert.true(
-      anomalyStub.calledOnceWith(sinon.match.has("reason", "empty_serialization")),
+      anomalyStub.calledOnceWith(
+        sinon.match.has("reason", "empty_serialization")
+      ),
       "invokes anomaly callback with context"
     );
   });
@@ -63,10 +65,12 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
         return this._value;
       },
       delete(start, len) {
-        this._value = this._value.slice(0, start) + this._value.slice(start + len);
+        this._value =
+          this._value.slice(0, start) + this._value.slice(start + len);
       },
       insert(start, str) {
-        this._value = this._value.slice(0, start) + str + this._value.slice(start);
+        this._value =
+          this._value.slice(0, start) + str + this._value.slice(start);
       },
     };
 
