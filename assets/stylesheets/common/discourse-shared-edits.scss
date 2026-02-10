@@ -6,6 +6,7 @@
   --shared-edit-color-5: #0aa;
   --shared-edit-color-6: #ffa500;
   --shared-edit-color-7: #800080;
+  --shared-edit-text-color: #fff;
 }
 
 #reply-control.composer-action-shared-edit {
@@ -60,7 +61,7 @@
   }
 }
 
-// Rich text mode cursor styles (from hello.html:248-268)
+// Rich text mode cursor styles
 // Used by y-prosemirror's yCursorPlugin
 .ProseMirror-yjs-cursor {
   position: relative;
@@ -73,11 +74,11 @@
     position: absolute;
     top: -1.2em;
     left: -2px;
-    font-size: 9px; // hello.html:260
-    font-weight: 500; // hello.html:261
-    padding: 1px 4px; // hello.html:262
+    font-size: 9px;
+    font-weight: 500;
+    padding: 1px 4px;
     border-radius: 3px;
-    color: white;
+    color: var(--shared-edit-text-color);
     white-space: nowrap;
     user-select: none;
     pointer-events: none;
