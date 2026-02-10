@@ -287,7 +287,10 @@ export default class SharedEditManager extends Service {
           );
         } catch (updateError) {
           // If applying update fails, fall back to full setup
-          debugError("Resync: failed to apply update, falling back:", updateError);
+          debugError(
+            "Resync: failed to apply update, falling back:",
+            updateError
+          );
           await this.#setupDoc(data.state, data.raw);
           this.pendingComposerReply =
             this.#yjsDocument?.getText() ?? data.raw ?? "";

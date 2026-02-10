@@ -113,7 +113,10 @@ export default class RichModeSync {
     }
 
     if (typeof newText !== "string") {
-      debugError("Rich mode sync failed: newText is not a string", typeof newText);
+      debugError(
+        "Rich mode sync failed: newText is not a string",
+        typeof newText
+      );
       this.#onSyncAnomaly?.({
         reason: "invalid_newtext_type",
         type: typeof newText,

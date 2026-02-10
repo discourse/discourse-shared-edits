@@ -13,10 +13,17 @@ puts post.raw.truncate(200)
 puts
 
 puts "Current revisions:"
-DiscourseSharedEdits::SharedEditRevision.where(post_id: post_id).each do |r|
-  text = DiscourseSharedEdits::Yjs.text_from_state(r.raw) rescue "ERROR"
-  puts "v#{r.version}: #{text.truncate(100)}"
-end
+DiscourseSharedEdits::SharedEditRevision
+  .where(post_id: post_id)
+  .each do |r|
+    text =
+      begin
+        DiscourseSharedEdits::Yjs.text_from_state(r.raw)
+      rescue StandardError
+        "ERROR"
+      end
+    puts "v#{r.version}: #{text.truncate(100)}"
+  end
 puts
 
 puts "Clearing rate limit keys..."
@@ -39,7 +46,7 @@ DiscourseSharedEdits::SharedEditRevision.create!(
   user_id: Discourse.system_user.id,
   version: 1,
   revision: "",
-  raw: initial_state[:state]
+  raw: initial_state[:state],
 )
 
 puts "Done! New state:"
