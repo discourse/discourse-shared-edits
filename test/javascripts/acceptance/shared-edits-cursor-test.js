@@ -67,7 +67,7 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     server.put("/shared_edits/p/:id/selection", () =>
       helper.response({ success: "OK" })
     );
-    server.put("/shared_edits/p/:id/commit", () =>
+    server.put("/shared_edits/p/:id/commit.json", () =>
       helper.response({ success: "OK" })
     );
   });

@@ -51,7 +51,7 @@ acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
       return helper.response({ success: "OK" });
     });
 
-    server.put("/shared_edits/p/:id/commit", () =>
+    server.put("/shared_edits/p/:id/commit.json", () =>
       helper.response({ success: "OK" })
     );
 

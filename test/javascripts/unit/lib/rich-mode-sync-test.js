@@ -1,6 +1,7 @@
 import { setupTest } from "ember-qunit";
 import { module, test } from "qunit";
 import sinon from "sinon";
+import * as debug from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/debug";
 import RichModeSync from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/rich-mode-sync";
 import * as YjsDocument from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/yjs-document";
 
@@ -33,12 +34,12 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
     };
 
     sinon.stub(YjsDocument, "getMarkdownFromView").returns("");
-    const consoleStub = sinon.stub(console, "error");
+    const debugErrorStub = sinon.stub(debug, "debugError");
 
     const result = sync.syncYTextFromXmlFragment(xmlFragment, text, doc);
 
     assert.false(result, "sync reports no changes applied");
-    assert.true(consoleStub.calledOnce, "logs a warning");
+    assert.true(debugErrorStub.calledOnce, "logs a warning");
     assert.true(doc.transact.notCalled, "does not mutate the Yjs document");
     assert.true(
       anomalyStub.calledOnceWith(

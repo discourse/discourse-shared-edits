@@ -163,7 +163,7 @@ export function setupSharedEditsPretender(server, helper, options = {}) {
     return helper.response({ success: "OK" });
   });
 
-  server.put("/shared_edits/p/:id/commit", () => {
+  server.put("/shared_edits/p/:id/commit.json", () => {
     commitCalls.push(Date.now());
     return helper.response({ success: "OK" });
   });

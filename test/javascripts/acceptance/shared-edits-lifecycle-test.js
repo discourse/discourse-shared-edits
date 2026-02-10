@@ -49,7 +49,7 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
       return helper.response({ success: "OK" });
     });
 
-    server.put("/shared_edits/p/:id/commit", () => {
+    server.put("/shared_edits/p/:id/commit.json", () => {
       commitCalls.push(Date.now());
       return helper.response({ success: "OK" });
     });
@@ -236,7 +236,7 @@ acceptance("Discourse Shared Edits | Lifecycle with State", function (needs) {
 
     server.put("/shared_edits/p/:id", () => helper.response({ success: "OK" }));
 
-    server.put("/shared_edits/p/:id/commit", () =>
+    server.put("/shared_edits/p/:id/commit.json", () =>
       helper.response({ success: "OK" })
     );
 
