@@ -15,6 +15,7 @@
  */
 import Service, { service } from "@ember/service";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { i18n } from "discourse-i18n";
 import { debugError, debugLog } from "../lib/shared-edits/debug";
 import {
   applyDiff,
@@ -22,6 +23,10 @@ import {
 } from "../lib/shared-edits/encoding-utils";
 import MarkdownSync from "../lib/shared-edits/markdown-sync";
 import NetworkManager from "../lib/shared-edits/network-manager";
+import {
+  SHARED_EDITS_ERRORS,
+  SHARED_EDITS_MESSAGE_ACTIONS,
+} from "../lib/shared-edits/protocol";
 import RichModeSync from "../lib/shared-edits/rich-mode-sync";
 import YjsDocument, {
   capturePM,
@@ -51,9 +56,19 @@ export {
 };
 
 const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
+// Exposed through `sessionState` for lifecycle observability in tests/debugging.
+const SESSION_STATE = Object.freeze({
+  IDLE: "idle",
+  SUBSCRIBING: "subscribing",
+  ACTIVE: "active",
+  RESYNCING: "resyncing",
+  COMMITTING: "committing",
+});
+const INVALID_UPDATE_ALERT_COOLDOWN_MS = 3000;
 
 export default class SharedEditManager extends Service {
   @service composer;
+  @service dialog;
   @service messageBus;
   @service siteSettings;
 
@@ -72,14 +87,14 @@ export default class SharedEditManager extends Service {
   #composerReady = false;
   #composerObserverAttached = false;
   #richModeFailed = false;
-  #closing = false;
+  #sessionState = SESSION_STATE.IDLE;
   #commitPromise = null;
-  #resyncInProgress = false;
+  #lastInvalidUpdateAlertAt = 0;
 
   // Event handlers
   #handleDocUpdate = (update, origin) => {
     // Skip remote updates (already applied, don't need to send back)
-    if (origin === "remote" || origin === "resync") {
+    if (origin === "remote" || origin === SHARED_EDITS_MESSAGE_ACTIONS.RESYNC) {
       return;
     }
 
@@ -140,7 +155,7 @@ export default class SharedEditManager extends Service {
     // malformed data which we should silently ignore.
     try {
       if (
-        this.#closing ||
+        this.#isCommitting() ||
         origin === "sync" ||
         !this.#richModeSync ||
         !this.#yjsDocument?.awareness
@@ -174,7 +189,7 @@ export default class SharedEditManager extends Service {
   };
 
   #handleRemoteMessage = (message) => {
-    if (this.#closing || !this.#yjsDocument?.doc) {
+    if (this.#isCommitting() || !this.#yjsDocument?.doc) {
       return;
     }
 
@@ -211,26 +226,26 @@ export default class SharedEditManager extends Service {
   };
 
   #handleSyncAnomaly = () => {
-    if (this.#closing) {
+    if (this.#isCommitting()) {
       return;
     }
     this.#handleResync();
   };
 
   #handleResync = async () => {
-    if (this.#closing) {
+    if (this.#isCommitting()) {
       return;
     }
 
     // Guard against concurrent/duplicate resyncs
-    if (this.#resyncInProgress) {
+    if (this.#sessionState === SESSION_STATE.RESYNCING) {
       return;
     }
-    this.#resyncInProgress = true;
+    this.#setSessionState(SESSION_STATE.RESYNCING);
 
     const postId = this.currentPostId || this.#postId;
     if (!postId) {
-      this.#resyncInProgress = false;
+      this.#setSessionState(SESSION_STATE.IDLE);
       return;
     }
 
@@ -254,7 +269,11 @@ export default class SharedEditManager extends Service {
           if (Y && data.state) {
             const serverUpdate = base64ToUint8Array(data.state);
             // Apply server state as update - CRDT will merge
-            Y.applyUpdate(this.#yjsDocument.doc, serverUpdate, "resync");
+            Y.applyUpdate(
+              this.#yjsDocument.doc,
+              serverUpdate,
+              SHARED_EDITS_MESSAGE_ACTIONS.RESYNC
+            );
 
             debugLog("Resync: applied server update to existing doc");
           }
@@ -318,7 +337,11 @@ export default class SharedEditManager extends Service {
     } catch (e) {
       popupAjaxError(e);
     } finally {
-      this.#resyncInProgress = false;
+      if (this.#sessionState === SESSION_STATE.RESYNCING) {
+        this.#setSessionState(
+          this.currentPostId ? SESSION_STATE.ACTIVE : SESSION_STATE.IDLE
+        );
+      }
     }
   };
 
@@ -400,6 +423,10 @@ export default class SharedEditManager extends Service {
     return this.siteSettings.shared_edits_editor_mode === "rich";
   }
 
+  get sessionState() {
+    return this.#sessionState;
+  }
+
   // Public API
 
   async subscribe(postId, { preOpen = false } = {}) {
@@ -429,6 +456,7 @@ export default class SharedEditManager extends Service {
       }
 
       this.#initializeHelpers();
+      this.#setSessionState(SESSION_STATE.SUBSCRIBING);
       data = await this.#networkManager.fetchState(postId);
     } catch (e) {
       popupAjaxError(e);
@@ -507,6 +535,7 @@ export default class SharedEditManager extends Service {
       postId,
       this.#networkManager.messageBusLastId ?? -1
     );
+    this.#setSessionState(SESSION_STATE.ACTIVE);
   }
 
   async commit() {
@@ -521,7 +550,7 @@ export default class SharedEditManager extends Service {
       return;
     }
 
-    this.#closing = true;
+    this.#setSessionState(SESSION_STATE.COMMITTING);
 
     this.#commitPromise = this.#doCommit(postId);
     try {
@@ -567,7 +596,7 @@ export default class SharedEditManager extends Service {
 
       // If a resync happened during flush, abort commit - the state is stale
       if (flushResult?.resynced) {
-        this.#closing = false;
+        this.#setSessionState(SESSION_STATE.ACTIVE);
         return;
       }
 
@@ -578,7 +607,7 @@ export default class SharedEditManager extends Service {
 
       this.#cleanup();
     } catch (e) {
-      this.#closing = false;
+      this.#setSessionState(SESSION_STATE.ACTIVE);
       popupAjaxError(e);
     }
   }
@@ -782,9 +811,9 @@ export default class SharedEditManager extends Service {
     this.pendingComposerReply = null;
     this.#composerReady = false;
     this.#richModeFailed = false;
-    this.#closing = false;
+    this.#sessionState = SESSION_STATE.IDLE;
     this.#commitPromise = null;
-    this.#resyncInProgress = false;
+    this.#lastInvalidUpdateAlertAt = 0;
     this.suppressComposerChange = false;
   }
 
@@ -798,7 +827,7 @@ export default class SharedEditManager extends Service {
   }
 
   async #sendUpdates() {
-    if (this.#closing || this.isDestroying || this.isDestroyed) {
+    if (this.#isCommitting() || this.isDestroying || this.isDestroyed) {
       return;
     }
 
@@ -832,6 +861,12 @@ export default class SharedEditManager extends Service {
         getDoc: () => this.#yjsDocument?.doc,
       });
     } catch (e) {
+      if (
+        e?.jqXHR?.responseJSON?.error === SHARED_EDITS_ERRORS.INVALID_UPDATE
+      ) {
+        this.#showInvalidUpdateAlert();
+      }
+
       // Errors are handled in NetworkManager, but log for debugging
       debugError("Failed to send updates:", e);
     }
@@ -882,6 +917,27 @@ export default class SharedEditManager extends Service {
     }
 
     this.syncFromComposerValue(this.composer.model.reply || "");
+  }
+
+  #setSessionState(nextState) {
+    this.#sessionState = nextState;
+  }
+
+  #isCommitting() {
+    return this.#sessionState === SESSION_STATE.COMMITTING;
+  }
+
+  #showInvalidUpdateAlert() {
+    const now = Date.now();
+    if (
+      now - this.#lastInvalidUpdateAlertAt <
+      INVALID_UPDATE_ALERT_COOLDOWN_MS
+    ) {
+      return;
+    }
+
+    this.#lastInvalidUpdateAlertAt = now;
+    this.dialog.alert(i18n("shared_edits.errors.invalid_update"));
   }
 
   #shouldAllowBlankState() {

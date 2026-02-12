@@ -9,6 +9,7 @@ en:
       done: "Done"
       errors:
         rich_mode_failed: "Shared edits couldn't load the rich editor collaboration plugins. The composer has been closed; please try again or switch to markdown mode."
+        invalid_update: "Shared edits couldn't apply the latest update. Please refresh and try again."
         blank_state_rejected: "Shared edits stopped because the server detected a change that would wipe the post. Please reopen the composer to resync."
         recovery_not_needed: "Recovery is only needed when shared edit state is unhealthy."
         commit_failed: "Shared edits could not be committed for this post."

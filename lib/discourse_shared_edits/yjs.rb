@@ -16,7 +16,7 @@ module DiscourseSharedEdits
       end
 
       def create_context
-        ctx = MiniRacer::Context.new
+        ctx = MiniRacer::Context.new(max_memory: 256_000_000, timeout: 5_000)
         ctx.eval(<<~JS)
           const global = this;
           var module = { exports: {} };

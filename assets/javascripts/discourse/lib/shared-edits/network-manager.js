@@ -8,6 +8,7 @@ import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 import { debugError, debugLog, debugWarn } from "./debug";
 import { base64ToUint8Array, uint8ArrayToBase64 } from "./encoding-utils";
+import { SHARED_EDITS_ERRORS, SHARED_EDITS_MESSAGE_ACTIONS } from "./protocol";
 import { computeStateHash, triggerYjsLoad } from "./yjs-document";
 
 const THROTTLE_SAVE = 500;
@@ -45,7 +46,7 @@ export default class NetworkManager {
   #retryCount = 0;
 
   #handleRemoteMessage = (message) => {
-    if (message.action === "resync") {
+    if (message.action === SHARED_EDITS_MESSAGE_ACTIONS.RESYNC) {
       this.#lastVerifiedHash = null; // Invalidate cache on resync
       this.#onResync?.();
       return;
@@ -114,7 +115,7 @@ export default class NetworkManager {
   }
 
   // Called by the orchestrator service to actually send updates
-  // Returns { resynced: true } if a 409 state_recovered triggered a resync
+  // Returns { resynced: true } if a recovery-related 409 triggered a resync
   async sendUpdates(
     postId,
     { cursorPayload, isRichMode, getClientId, allowBlankState, getDoc } = {}
@@ -206,7 +207,7 @@ export default class NetworkManager {
       // Handle corruption that needs client text for recovery
       if (
         e.jqXHR?.status === 409 &&
-        e.jqXHR?.responseJSON?.error === "needs_recovery_text"
+        e.jqXHR?.responseJSON?.error === SHARED_EDITS_ERRORS.NEEDS_RECOVERY_TEXT
       ) {
         const recoveryText = this.#getRecoveryText?.();
         if (recoveryText != null) {
@@ -233,7 +234,10 @@ export default class NetworkManager {
 
       if (
         e.jqXHR?.status === 409 &&
-        e.jqXHR?.responseJSON?.error === "state_recovered"
+        [
+          SHARED_EDITS_ERRORS.STATE_RECOVERED,
+          SHARED_EDITS_ERRORS.STATE_RECOVERED_FROM_CLIENT,
+        ].includes(e.jqXHR?.responseJSON?.error)
       ) {
         this.#retryCount = 0;
         this.#onResync?.();
@@ -243,7 +247,7 @@ export default class NetworkManager {
       // Handle state divergence - client is behind server
       if (
         e.jqXHR?.status === 409 &&
-        e.jqXHR?.responseJSON?.error === "state_diverged" &&
+        e.jqXHR?.responseJSON?.error === SHARED_EDITS_ERRORS.STATE_DIVERGED &&
         e.jqXHR?.responseJSON?.missing_update
       ) {
         const doc = getDoc?.();

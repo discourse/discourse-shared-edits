@@ -106,7 +106,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         put "/shared_edits/p/#{post1.id}/disable"
 
         expect(response.status).to eq(422)
-        expect(response.parsed_body["error"]).to eq("disable_failed")
+        expect(response.parsed_body["error"]).to eq(
+          DiscourseSharedEdits::Protocol::Errors::DISABLE_FAILED,
+        )
 
         post1.reload
         expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to eq(true)
@@ -272,7 +274,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       put "/shared_edits/p/#{post1.id}/commit"
 
       expect(response.status).to eq(422)
-      expect(response.parsed_body["error"]).to eq("commit_failed")
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::COMMIT_FAILED,
+      )
       post1.reload
       expect(post1.raw).to eq(original_raw)
     end
@@ -344,7 +348,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: blank_update }
 
       expect(response.status).to eq(422)
-      expect(response.parsed_body["error"]).to eq("blank_state_rejected")
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::BLANK_STATE_REJECTED,
+      )
     end
 
     it "allows blanking a post when allow flag is provided" do
@@ -362,9 +368,68 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(response.parsed_body["version"]).to eq(2)
     end
 
+    it "ignores allow_blank_state from non-privileged users" do
+      post_author = Fabricate(:user, refresh_auto_groups: true)
+      author_post = Fabricate(:post, user: post_author, raw: "Hello World, testing shared edits")
+      SharedEditRevision.toggle_shared_edits!(author_post.id, true)
+      sign_in(post_author)
+
+      latest_state =
+        SharedEditRevision
+          .where(post_id: author_post.id)
+          .order("version desc")
+          .limit(1)
+          .pluck(:raw)
+          .first
+      blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
+
+      put "/shared_edits/p/#{author_post.id}",
+          params: {
+            client_id: "abc",
+            update: blank_update,
+            allow_blank_state: true,
+          }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::BLANK_STATE_REJECTED,
+      )
+    end
+
     it "requires client_id parameter" do
       put "/shared_edits/p/#{post1.id}", params: { update: "test" }
       expect(response.status).to eq(400)
+    end
+
+    it "rejects oversized client_id values" do
+      latest_state = latest_state_for(post1)
+      oversized_client_id = "a" * 256
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: oversized_client_id,
+            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Updated content"),
+          }
+
+      expect(response.status).to eq(400)
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::INVALID_UPDATE,
+      )
+    end
+
+    it "rejects oversized client_id for awareness-only updates" do
+      oversized_client_id = "a" * 256
+
+      put "/shared_edits/p/#{post1.id}",
+          params: {
+            client_id: oversized_client_id,
+            awareness: Base64.strict_encode64("awareness_data"),
+          }
+
+      expect(response.status).to eq(400)
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::INVALID_UPDATE,
+      )
     end
 
     it "requires update or awareness parameter" do
@@ -470,7 +535,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
       # Server now asks for recovery text instead of auto-recovering
       expect(response.status).to eq(409)
-      expect(response.parsed_body["error"]).to eq("needs_recovery_text")
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::NEEDS_RECOVERY_TEXT,
+      )
     end
 
     describe "state vector validation" do
@@ -513,7 +580,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
             }
 
         expect(response.status).to eq(409)
-        expect(response.parsed_body["error"]).to eq("state_diverged")
+        expect(response.parsed_body["error"]).to eq(
+          DiscourseSharedEdits::Protocol::Errors::STATE_DIVERGED,
+        )
         expect(response.parsed_body["missing_update"]).to be_present
 
         applied =
@@ -554,6 +623,22 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
         expect(response.status).to eq(200)
       end
+
+      it "rejects invalid state vectors" do
+        latest_state = latest_state_for(post1)
+
+        put "/shared_edits/p/#{post1.id}",
+            params: {
+              client_id: "abc",
+              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Client update"),
+              state_vector: "invalid!!!",
+            }
+
+        expect(response.status).to eq(400)
+        expect(response.parsed_body["error"]).to eq(
+          DiscourseSharedEdits::Protocol::Errors::INVALID_UPDATE,
+        )
+      end
     end
 
     it "rejects recovery text when state is healthy" do
@@ -567,7 +652,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           }
 
       expect(response.status).to eq(409)
-      expect(response.parsed_body["error"]).to eq("recovery_not_needed")
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::RECOVERY_NOT_NEEDED,
+      )
       expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
       expect(latest_state_for(post1)).to eq(initial_state)
     end
@@ -598,7 +685,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           }
 
       expect(response.status).to eq(200)
-      expect(response.parsed_body["error"]).to eq("state_recovered_from_client")
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::STATE_RECOVERED_FROM_CLIENT,
+      )
       expect(response.parsed_body["version"]).to be_present
     end
 
@@ -622,7 +711,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           }
 
       expect(response.status).to eq(409)
-      expect(response.parsed_body["error"]).to eq("not_initialized")
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::NOT_INITIALIZED,
+      )
     end
 
     it "returns 403 when the user cannot edit the post" do
@@ -951,7 +1042,9 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         post "/shared_edits/p/#{post1.id}/reset"
 
         expect(response.status).to eq(422)
-        expect(response.parsed_body["error"]).to eq("reset_failed")
+        expect(response.parsed_body["error"]).to eq(
+          DiscourseSharedEdits::Protocol::Errors::RESET_FAILED,
+        )
         expect(SharedEditRevision.where(post_id: post1.id).count).to eq(revision_count)
       end
     end

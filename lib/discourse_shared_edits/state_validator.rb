@@ -6,6 +6,8 @@ module DiscourseSharedEdits
     RECOVERY_RATE_LIMIT_SECONDS = 30
     MAX_RECOVERY_ATTEMPTS_PER_HOUR = 10
     MAX_UPDATE_BYTES = 1.megabyte
+    MAX_STATE_VECTOR_BYTES = 64.kilobytes
+    MAX_CLIENT_ID_LENGTH = 255
 
     class StateCorruptionError < StandardError
       attr_reader :post_id, :version, :recovery_attempted
@@ -136,10 +138,24 @@ module DiscourseSharedEdits
         begin
           decoded = Base64.strict_decode64(state_vector_b64)
           return { valid: false, error: "Decoded state vector is empty" } if decoded.empty?
+          if decoded.bytesize > MAX_STATE_VECTOR_BYTES
+            return { valid: false, error: "State vector payload too large" }
+          end
           { valid: true, error: nil }
         rescue ArgumentError => e
           { valid: false, error: "Invalid base64: #{e.message}" }
         end
+      end
+
+      def validate_client_id(client_id)
+        return { valid: false, error: "Client ID is nil" } if client_id.nil?
+        return { valid: false, error: "Client ID must be a string" } if !client_id.is_a?(String)
+        return { valid: false, error: "Client ID is empty" } if client_id.empty?
+        if client_id.bytesize > MAX_CLIENT_ID_LENGTH
+          return { valid: false, error: "Client ID is too long" }
+        end
+
+        { valid: true, error: nil }
       end
 
       def validate_client_state_vector(server_state_b64, client_sv_b64)
@@ -382,7 +398,8 @@ module DiscourseSharedEdits
 
         text_length = result[:text]&.length || 0
         max_length = SiteSetting.max_post_length
-        if text_length > max_length
+        previous_length = previous_text&.length || 0
+        if text_length > max_length && text_length > previous_length
           raise PostLengthExceededError.new(
                   "Post length #{text_length} exceeds maximum allowed #{max_length}",
                   post_id: post_id,

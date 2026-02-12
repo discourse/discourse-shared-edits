@@ -25,7 +25,7 @@ module ::DiscourseSharedEdits
       disabled = SharedEditRevision.toggle_shared_edits!(post.id, false)
       if !disabled
         render json: {
-                 error: "disable_failed",
+                 error: Protocol::Errors::DISABLE_FAILED,
                  message: I18n.t("shared_edits.errors.disable_failed"),
                },
                status: :unprocessable_entity
@@ -66,14 +66,8 @@ module ::DiscourseSharedEdits
           )
           recovery = StateValidator.recover_from_post_raw(@post.id, force: true)
           if recovery[:success]
+            publish_resync!(recovery[:new_version])
             revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
-
-            @post.publish_message!(
-              SharedEditRevision.message_bus_channel(@post.id),
-              { action: "resync", version: recovery[:new_version] },
-              max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
-              max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
-            )
 
             message_bus_last_id =
               MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
@@ -103,7 +97,7 @@ module ::DiscourseSharedEdits
 
       if commit_result.nil?
         render json: {
-                 error: "commit_failed",
+                 error: Protocol::Errors::COMMIT_FAILED,
                  message: I18n.t("shared_edits.errors.commit_failed"),
                },
                status: :unprocessable_entity
@@ -117,14 +111,17 @@ module ::DiscourseSharedEdits
       params.require(:client_id)
 
       guardian.ensure_can_edit!(@post)
+      client_id = params[:client_id]
 
       if params[:recovery_text].present?
+        return if !ensure_valid_client_id!(client_id)
+
         RateLimiter.new(current_user, "shared-edit-recover-#{@post.id}", 20, 1.minute).performed!
 
         health = StateValidator.health_check(@post.id)
         if health[:state] == :initialized && health[:healthy]
           render json: {
-                   error: "recovery_not_needed",
+                   error: Protocol::Errors::RECOVERY_NOT_NEEDED,
                    message: I18n.t("shared_edits.errors.recovery_not_needed"),
                  },
                  status: :conflict
@@ -133,20 +130,15 @@ module ::DiscourseSharedEdits
 
         recovery = StateValidator.recover_from_text(@post.id, params[:recovery_text])
         if recovery[:success]
-          @post.publish_message!(
-            SharedEditRevision.message_bus_channel(@post.id),
-            { action: "resync", version: recovery[:new_version] },
-            max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
-            max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
-          )
+          publish_resync!(recovery[:new_version])
           render json: {
-                   error: "state_recovered_from_client",
+                   error: Protocol::Errors::STATE_RECOVERED_FROM_CLIENT,
                    version: recovery[:new_version],
                  },
                  status: :ok
         else
           render json: {
-                   error: "recovery_failed",
+                   error: Protocol::Errors::RECOVERY_FAILED,
                    message: recovery[:message],
                  },
                  status: :unprocessable_entity
@@ -167,10 +159,12 @@ module ::DiscourseSharedEdits
 
       if params[:update].blank?
         if awareness.present?
+          return if !ensure_valid_client_id!(client_id)
+
           @post.publish_message!(
             SharedEditRevision.message_bus_channel(@post.id),
             {
-              client_id: params[:client_id],
+              client_id: client_id,
               user_id: current_user.id,
               username: current_user.username,
               awareness: awareness,
@@ -195,53 +189,43 @@ module ::DiscourseSharedEdits
         end
       cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
 
-      allow_blank_state = ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
+      allow_blank_state =
+        if guardian.can_toggle_shared_edits?
+          ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
+        else
+          false
+        end
 
-      if params[:state_vector].present?
-        latest = SharedEditRevision.where(post_id: @post.id).order("version desc").first
-        if latest&.raw.present?
-          validation =
-            StateValidator.validate_client_state_vector(latest.raw, params[:state_vector])
-          unless validation[:valid]
-            if validation[:missing_update].present?
-              raise StateValidator::StateDivergedError.new(
-                      "Client state vector is behind server",
-                      post_id: @post.id,
-                      missing_update: validation[:missing_update],
-                    )
-            else
-              Rails.logger.warn(
-                "[SharedEdits] State vector validation failed for post #{@post.id}: #{validation[:error]}",
-              )
-            end
-          end
+      DiscourseSharedEdits::Revise.call(
+        post: @post,
+        current_user: current_user,
+        client_id: client_id,
+        update: params[:update],
+        cursor: cursor_hash,
+        awareness: awareness,
+        allow_blank_state: allow_blank_state,
+        state_vector: params[:state_vector],
+      ) do |result|
+        on_success do
+          response = { version: result[:version], update: result[:update] }
+          response[:state_hash] = result[:state_hash] if result[:state_hash].present?
+          render json: response
+        end
+
+        on_failure do
+          render json: {
+                   error: Protocol::Errors::INVALID_UPDATE,
+                   message: I18n.t("shared_edits.errors.invalid_update"),
+                 },
+                 status: :unprocessable_entity
         end
       end
-
-      version, update, state_hash =
-        SharedEditRevision.revise!(
-          post_id: @post.id,
-          user_id: current_user.id,
-          client_id: params[:client_id],
-          update: params[:update],
-          cursor: cursor_hash,
-          awareness: awareness,
-          post: @post,
-          username: current_user.username,
-          allow_blank_state: allow_blank_state,
-        )
-
-      SharedEditRevision.ensure_will_commit(@post.id)
-
-      response = { version: version, update: update }
-      response[:state_hash] = state_hash if state_hash.present?
-      render json: response
     rescue StateValidator::UnexpectedBlankStateError => e
       Rails.logger.warn(
         "[SharedEdits] Rejected blank update for post #{params[:post_id]}: #{e.message}",
       )
       render json: {
-               error: "blank_state_rejected",
+               error: Protocol::Errors::BLANK_STATE_REJECTED,
                message: I18n.t("shared_edits.errors.blank_state_rejected"),
              },
              status: :unprocessable_entity
@@ -250,7 +234,7 @@ module ::DiscourseSharedEdits
         "[SharedEdits] Invalid update payload for post #{params[:post_id]}: #{e.message}",
       )
       render json: {
-               error: "invalid_update",
+               error: Protocol::Errors::INVALID_UPDATE,
                message: I18n.t("shared_edits.errors.invalid_update"),
              },
              status: :bad_request
@@ -259,7 +243,7 @@ module ::DiscourseSharedEdits
         "[SharedEdits] Post length exceeded for post #{params[:post_id]}: #{e.message}",
       )
       render json: {
-               error: "post_length_exceeded",
+               error: Protocol::Errors::POST_LENGTH_EXCEEDED,
                message:
                  I18n.t(
                    "shared_edits.errors.post_length_exceeded",
@@ -276,21 +260,25 @@ module ::DiscourseSharedEdits
       )
 
       render json: {
-               error: "needs_recovery_text",
+               error: Protocol::Errors::NEEDS_RECOVERY_TEXT,
                message: I18n.t("shared_edits.errors.needs_recovery_text"),
              },
              status: :conflict
     rescue StateValidator::StateDivergedError => e
       Rails.logger.info("[SharedEdits] State diverged for post #{params[:post_id]}: #{e.message}")
 
-      render json: { error: "state_diverged", missing_update: e.missing_update }, status: :conflict
+      render json: {
+               error: Protocol::Errors::STATE_DIVERGED,
+               missing_update: e.missing_update,
+             },
+             status: :conflict
     rescue StateValidator::SharedEditsNotInitializedError => e
       Rails.logger.info(
         "[SharedEdits] Shared edits not initialized for post #{params[:post_id]}: #{e.message}",
       )
 
       render json: {
-               error: "not_initialized",
+               error: Protocol::Errors::NOT_INITIALIZED,
                message: I18n.t("shared_edits.errors.not_initialized"),
              },
              status: :conflict
@@ -313,17 +301,12 @@ module ::DiscourseSharedEdits
       result =
         StateValidator.recover_from_post_raw(
           @post.id,
-          force: params[:force] == "true",
+          force: ActiveModel::Type::Boolean.new.cast(params[:force]),
           skip_rate_limit: true,
         )
 
       if result[:success]
-        @post.publish_message!(
-          SharedEditRevision.message_bus_channel(@post.id),
-          { action: "resync", version: result[:new_version] },
-          max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
-          max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
-        )
+        publish_resync!(result[:new_version])
         render json: result
       else
         render json: result, status: :unprocessable_entity
@@ -337,19 +320,14 @@ module ::DiscourseSharedEdits
       new_version = SharedEditRevision.reset_history!(@post.id)
       if new_version.nil?
         render json: {
-                 error: "reset_failed",
+                 error: Protocol::Errors::RESET_FAILED,
                  message: I18n.t("shared_edits.errors.reset_failed"),
                },
                status: :unprocessable_entity
         return
       end
 
-      @post.publish_message!(
-        SharedEditRevision.message_bus_channel(@post.id),
-        { action: "resync", version: new_version },
-        max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
-        max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
-      )
+      publish_resync!(new_version)
 
       render json: { success: true, version: new_version }
     end
@@ -368,6 +346,27 @@ module ::DiscourseSharedEdits
       unless @post.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]
         raise Discourse::NotFound
       end
+    end
+
+    def publish_resync!(version)
+      @post.publish_message!(
+        SharedEditRevision.message_bus_channel(@post.id),
+        { action: Protocol::MessageActions::RESYNC, version: version },
+        max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
+        max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
+      )
+    end
+
+    def ensure_valid_client_id!(client_id)
+      validation = StateValidator.validate_client_id(client_id)
+      return true if validation[:valid]
+
+      render json: {
+               error: Protocol::Errors::INVALID_UPDATE,
+               message: I18n.t("shared_edits.errors.invalid_update"),
+             },
+             status: :bad_request
+      false
     end
   end
 end

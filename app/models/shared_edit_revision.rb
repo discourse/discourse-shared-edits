@@ -57,7 +57,7 @@ class SharedEditRevision < ActiveRecord::Base
           latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
           if latest&.raw.present? && latest.post_revision_id.nil?
             Rails.logger.warn(
-              "[SharedEdits] Disabling shared edits for post #{post_id} with uncommitted changes",
+              "[SharedEdits] Failed to disable shared edits for post #{post_id}: uncommitted changes present",
             )
             disable_failed = true
           end
@@ -396,12 +396,14 @@ class SharedEditRevision < ActiveRecord::Base
         .where.not(revision: ["", nil])
         .order(version: :desc)
 
+    recent_candidates = all_recent.limit(MESSAGE_BUS_MAX_BACKLOG_SIZE + 1).to_a
+
     # Check if we need to truncate to message bus size limit
-    needs_resync = all_recent.count > MESSAGE_BUS_MAX_BACKLOG_SIZE
+    needs_resync = recent_candidates.length > MESSAGE_BUS_MAX_BACKLOG_SIZE
     skipped_corrupted_revisions = 0
 
     # Take only what message bus can hold, then reverse to apply in order
-    recent_revisions = all_recent.limit(MESSAGE_BUS_MAX_BACKLOG_SIZE).to_a.reverse
+    recent_revisions = recent_candidates.first(MESSAGE_BUS_MAX_BACKLOG_SIZE).reverse
 
     # Extract text and create fresh base state
     text = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
@@ -446,7 +448,7 @@ class SharedEditRevision < ActiveRecord::Base
       post = Post.find(post_id)
       post.publish_message!(
         message_bus_channel(post_id),
-        { action: "resync", version: latest.version },
+        { action: DiscourseSharedEdits::Protocol::MessageActions::RESYNC, version: latest.version },
         max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
         max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
       )
@@ -465,7 +467,8 @@ class SharedEditRevision < ActiveRecord::Base
     awareness: nil,
     post: nil,
     username: nil,
-    allow_blank_state: false
+    allow_blank_state: false,
+    state_vector: nil
   )
     retries = 0
 
@@ -477,6 +480,28 @@ class SharedEditRevision < ActiveRecord::Base
                   "shared edits not initialized",
                   post_id: post_id,
                 )
+        end
+
+        if state_vector.present?
+          validation =
+            DiscourseSharedEdits::StateValidator.validate_client_state_vector(
+              latest.raw,
+              state_vector,
+            )
+          unless validation[:valid]
+            if validation[:missing_update].present?
+              raise DiscourseSharedEdits::StateValidator::StateDivergedError.new(
+                      "Client state vector is behind server",
+                      post_id: post_id,
+                      missing_update: validation[:missing_update],
+                    )
+            end
+
+            raise DiscourseSharedEdits::StateValidator::InvalidUpdateError.new(
+                    "Invalid state vector: #{validation[:error]}",
+                    post_id: post_id,
+                  )
+          end
         end
 
         applied =

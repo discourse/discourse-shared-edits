@@ -24,8 +24,10 @@ after_initialize do
 
   require_relative "lib/discourse_shared_edits/yjs"
   require_relative "lib/discourse_shared_edits/state_validator"
+  require_relative "lib/discourse_shared_edits/protocol"
   require_relative "app/models/shared_edit_revision"
   require_relative "app/controllers/discourse_shared_edits/revision_controller"
+  require_relative "app/services/discourse_shared_edits/revise"
   require_relative "app/jobs/commit_shared_revision"
   require_relative "lib/discourse_shared_edits/guardian_extension"
 

@@ -187,6 +187,26 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
     );
   });
 
+  test("session state transitions across lifecycle", async function (assert) {
+    await openSharedEditComposer();
+
+    const manager = await waitForSharedEditManager(this.container);
+
+    assert.strictEqual(
+      manager.sessionState,
+      "active",
+      "Session is active after subscribe/finalize"
+    );
+
+    await manager.commit();
+
+    assert.strictEqual(
+      manager.sessionState,
+      "idle",
+      "Session returns to idle after cleanup"
+    );
+  });
+
   test("multiple subscribes to different posts clean up previous", async function (assert) {
     await openSharedEditComposer();
 

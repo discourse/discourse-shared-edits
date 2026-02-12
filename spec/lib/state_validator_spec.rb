@@ -92,6 +92,53 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       expect(result[:valid]).to eq(false)
       expect(result[:error]).to include("Invalid base64")
     end
+
+    it "returns invalid for oversized state vector payloads" do
+      oversized = Base64.strict_encode64("a" * 70.kilobytes)
+
+      result = described_class.validate_state_vector(oversized)
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to include("payload too large")
+    end
+  end
+
+  describe ".validate_client_id" do
+    it "returns valid for a non-empty string client_id" do
+      result = described_class.validate_client_id("abc123")
+
+      expect(result[:valid]).to eq(true)
+      expect(result[:error]).to be_nil
+    end
+
+    it "returns invalid for nil client_id" do
+      result = described_class.validate_client_id(nil)
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to eq("Client ID is nil")
+    end
+
+    it "returns invalid for non-string client_id" do
+      result = described_class.validate_client_id({ foo: "bar" })
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to eq("Client ID must be a string")
+    end
+
+    it "returns invalid for empty client_id" do
+      result = described_class.validate_client_id("")
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to eq("Client ID is empty")
+    end
+
+    it "returns invalid for oversized client_id" do
+      oversized_client_id = "a" * 256
+      result = described_class.validate_client_id(oversized_client_id)
+
+      expect(result[:valid]).to eq(false)
+      expect(result[:error]).to eq("Client ID is too long")
+    end
   end
 
   describe ".validate_client_state_vector" do
