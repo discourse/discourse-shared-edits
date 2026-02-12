@@ -143,23 +143,11 @@ RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
       topic_page.click_shared_edit_button(post)
       try_until_success { expect(composer).to be_opened }
 
-      # Make an edit (via backend simulation since rich mode typing is complex)
-      latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
-      update =
-        DiscourseSharedEdits::Yjs.update_from_state(latest.raw, "lorem ipsum\nrich edit content")
+      composer.type_content "rich edit content"
 
-      SharedEditRevision.revise!(
-        post_id: post.id,
-        user_id: admin.id,
-        client_id: "rich-client",
-        update: update,
-      )
-
-      # Trigger commit via the done button
       composer.leave_shared_edit
 
-      # Verify the post was updated
-      try_until_success { expect(post.reload.raw).to eq("lorem ipsum\nrich edit content") }
+      try_until_success { expect(post.reload.raw).to include("rich edit content") }
     end
   end
 end
