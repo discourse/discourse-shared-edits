@@ -5,6 +5,10 @@ import DButton from "discourse/components/d-button";
 import concatClass from "discourse/helpers/concat-class";
 
 export default class SharedEditButton extends Component {
+  static hidden() {
+    return false;
+  }
+
   static shouldRender(args) {
     return args.post.can_edit;
   }

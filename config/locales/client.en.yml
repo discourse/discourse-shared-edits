@@ -5,4 +5,13 @@ en:
       disable_shared_edits: "Disable Shared Edits"
       edit: "Edit"
       button_title: "Edit Post Collaboratively"
+      composer_title: "Post is being edited collaboratively"
       done: "Done"
+      errors:
+        rich_mode_failed: "Shared edits couldn't load the rich editor collaboration plugins. The composer has been closed; please try again or switch to markdown mode."
+        invalid_update: "Shared edits couldn't apply the latest update. Please refresh and try again."
+        blank_state_rejected: "Shared edits stopped because the server detected a change that would wipe the post. Please reopen the composer to resync."
+        recovery_not_needed: "Recovery is only needed when shared edit state is unhealthy."
+        commit_failed: "Shared edits could not be committed for this post."
+        disable_failed: "Shared edits could not be disabled because pending changes could not be committed."
+        reset_failed: "Shared edit history could not be reset because pending changes could not be committed."

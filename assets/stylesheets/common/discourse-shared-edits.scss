@@ -1,4 +1,15 @@
-#reply-control.composer-action-sharedEdit {
+:root {
+  --shared-edit-color-1: #f00;
+  --shared-edit-color-2: #0a0;
+  --shared-edit-color-3: #00f;
+  --shared-edit-color-4: #f0f;
+  --shared-edit-color-5: #0aa;
+  --shared-edit-color-6: #ffa500;
+  --shared-edit-color-7: #800080;
+  --shared-edit-text-color: #fff;
+}
+
+#reply-control.composer-action-shared-edit {
   .save-or-cancel {
     button,
     a {
@@ -13,5 +24,69 @@
 
   .d-editor-preview-wrapper {
     margin-top: 0;
+  }
+
+  .action-title .svg-icon-title {
+    margin-right: 0.5em;
+  }
+}
+
+.shared-edits-cursor-overlay {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 100;
+}
+
+.shared-edits-cursor {
+  position: absolute;
+  height: 1.2em;
+  will-change: transform;
+  border-left-width: 2px;
+  border-left-style: solid;
+}
+
+.shared-edits-cursor__label {
+  position: absolute;
+  top: -1.6em;
+  left: -2px;
+  font-size: 0.75em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  color: var(--secondary);
+
+  &--bottom {
+    top: 1.2em;
+  }
+}
+
+// Rich text mode cursor styles
+// Used by y-prosemirror's yCursorPlugin
+.ProseMirror-yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid;
+  pointer-events: none;
+
+  > div {
+    position: absolute;
+    top: -1.2em;
+    left: -2px;
+    font-size: 9px;
+    font-weight: 500;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--shared-edit-text-color);
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+    z-index: 10;
+
+    // Flip label below cursor when near the top of the editor (first line)
+    &.ProseMirror-yjs-cursor__label--below {
+      top: 1.1em;
+    }
   }
 }

@@ -1,0 +1,289 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# rubocop:disable Discourse/Plugins/NamespaceConstants, Discourse/Plugins/NamespaceMethods
+
+# Browser-based shared edit simulator for testing Yjs operational transformation
+#
+# Usage: fake_writer POST_ID [OPTIONS]
+#     or fake_writer TOPIC_ID/POST_NUMBER [OPTIONS]
+#
+# Options:
+#   --help, -h                  Show this help message and exit
+#   --speed=slow|normal|fast    Typing speed (default: normal)
+#   --headless=true|false       Run headless browser (default: true)
+#   --user=USERNAME             Login username (default: admin)
+#   --base-url=URL              Discourse URL (default: http://localhost:4200)
+#   --post-id=ID                Post ID (alternative to positional argument)
+#   --topic-post=TOPIC/POST     Topic ID and post number (alternative to positional)
+#
+# The shared-edits plugin throttles syncs every 350ms during continuous typing.
+
+rails_root = File.expand_path("../../../..", __FILE__)
+ENV["RAILS_ENV"] ||= "development"
+# rubocop:disable Discourse/NoChdir
+Dir.chdir(rails_root)
+require File.expand_path("config/environment", rails_root)
+
+require "playwright"
+
+PHRASES = [
+  "The quick brown fox jumps over the lazy dog. ",
+  "Hello world! This is a test. ",
+  "Testing shared edits functionality. ",
+  "Multiple users can edit simultaneously. ",
+  "Real-time synchronization in action! ",
+  "Lorem ipsum dolor sit amet. ",
+].freeze
+
+# Speed configs
+SPEEDS = {
+  "slow" => {
+    char_ms: 2000..4000,
+    phrase_ms: 10_000..15_000,
+  },
+  "normal" => {
+    char_ms: 30..80,
+    phrase_ms: 200..400,
+  },
+  "fast" => {
+    char_ms: 10..30,
+    phrase_ms: 50..150,
+  },
+}.freeze
+
+def show_help
+  puts <<~HELP
+    Fake Writer - Shared Edit Simulator
+
+    Browser-based shared edit simulator for testing Yjs operational transformation.
+    Simulates a user typing continuously in a shared edit session.
+
+    Usage:
+      fake_writer POST_ID [OPTIONS]
+      fake_writer TOPIC_ID/POST_NUMBER [OPTIONS]
+
+    Arguments:
+      POST_ID               The ID of the post to edit
+      TOPIC_ID/POST_NUMBER  Topic ID and post number (e.g., 123/1 for first post)
+
+    Options:
+      --help, -h                  Show this help message and exit
+      --speed=SPEED               Typing speed: slow, normal, fast (default: normal)
+                                    slow:   2-4s per char, 10-15s between phrases
+                                    normal: 30-80ms per char, 200-400ms between phrases
+                                    fast:   10-30ms per char, 50-150ms between phrases
+      --headless=BOOL             Run headless browser: true, false (default: true)
+      --user=USERNAME             Login username (default: admin)
+      --base-url=URL              Discourse URL (default: http://localhost:4200)
+      --post-id=ID                Post ID (alternative to positional argument)
+      --topic-post=TOPIC/POST     Topic ID and post number (alternative to positional)
+
+    Examples:
+      fake_writer 42                           # Edit post ID 42
+      fake_writer 10/1                         # Edit first post in topic 10
+      fake_writer 42 --speed=fast              # Fast typing speed
+      fake_writer 42 --headless=false          # Show browser window
+      fake_writer --post-id=42 --user=codinghorror
+      fake_writer --topic-post=10/1 --base-url=http://localhost:3000
+  HELP
+  exit 0
+end
+
+def parse_args
+  opts = { speed: "normal", headless: true, user: "admin", base_url: "http://localhost:4200" }
+  post_id = nil
+  topic_ref = nil
+
+  ARGV.each do |arg|
+    case arg
+    when "--help", "-h"
+      show_help
+    when /^--speed=(.+)$/
+      opts[:speed] = $1
+    when /^--headless=(.+)$/
+      opts[:headless] = $1 != "false"
+    when /^--user=(.+)$/
+      opts[:user] = $1
+    when /^--base-url=(.+)$/
+      opts[:base_url] = $1
+    when /^--post-id=(\d+)$/
+      post_id = $1.to_i
+    when %r{^--topic-post=(\d+)/(\d+)$}
+      topic_ref = [$1.to_i, $2.to_i]
+    when %r{^(\d+)/(\d+)$}
+      topic_ref = [$1.to_i, $2.to_i]
+    when /^\d+$/
+      post_id = arg.to_i
+    end
+  end
+
+  [post_id, topic_ref, opts]
+end
+
+def resolve_post_id(post_id, topic_ref)
+  return post_id if post_id
+  return nil unless topic_ref
+
+  topic_id, post_number = topic_ref
+  post = Post.find_by(topic_id: topic_id, post_number: post_number)
+  unless post
+    warn "Post not found for topic #{topic_id} post ##{post_number}"
+    exit 1
+  end
+
+  post.id
+end
+
+def topic_for_post(post_id)
+  post = Post.includes(:topic).find_by(id: post_id)
+  unless post
+    warn "Post #{post_id} not found"
+    exit 1
+  end
+
+  topic = post.topic
+  unless topic
+    warn "Topic for post #{post_id} not found"
+    exit 1
+  end
+
+  { id: topic.id, slug: topic.slug, title: topic.title }
+end
+
+def focus_editor(page)
+  textarea = page.query_selector("#reply-control .d-editor-input")
+  if textarea && textarea.evaluate("el => el && el.tagName === 'TEXTAREA'")
+    textarea.evaluate(<<~JS)
+        (el) => {
+          if (!el) {
+            return;
+          }
+          const value = typeof el.value === "string" ? el.value : "";
+          el.focus();
+          const len = value.length;
+          el.setSelectionRange(len, len);
+        }
+      JS
+    return :markdown
+  end
+
+  pm = page.query_selector("#reply-control .ProseMirror")
+  if pm
+    pm.click
+    pm.evaluate(<<~JS)
+      (el) => {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    JS
+    return :rich
+  end
+
+  nil
+end
+
+def random_delay(range)
+  return 0 if range.nil?
+  min = range.begin
+  max = range.end
+  rand(min..max) / 1000.0
+end
+
+def type_phrase(page, phrase, speed)
+  editor_type = focus_editor(page)
+  raise "Editor not ready" unless editor_type
+  phrase.each_char do |char|
+    page.keyboard.insert_text(char)
+    print char
+    $stdout.flush
+    sleep random_delay(speed[:char_ms])
+  end
+end
+
+# Main
+post_id, topic_ref, opts = parse_args
+post_id = resolve_post_id(post_id, topic_ref)
+
+unless post_id
+  puts "Usage: fake_writer POST_ID or fake_writer TOPIC_ID/POST_NUMBER"
+  puts "Run 'fake_writer --help' for more options."
+  exit 1
+end
+
+speed = SPEEDS[opts[:speed]] || SPEEDS["normal"]
+topic = topic_for_post(post_id)
+
+puts "=" * 50
+puts "Fake Writer - Shared Edit Simulator"
+puts "=" * 50
+puts "Post: #{post_id}"
+puts "Topic: #{topic[:title]}"
+puts "Speed: #{opts[:speed]} (char: #{speed[:char_ms]}ms, phrase: #{speed[:phrase_ms]}ms)"
+puts "Headless: #{opts[:headless]}"
+puts "=" * 50
+
+Playwright.create(playwright_cli_executable_path: "./node_modules/.bin/playwright") do |playwright|
+  browser =
+    playwright.chromium.launch(
+      headless: opts[:headless],
+      args: %w[--no-sandbox --disable-dev-shm-usage --disable-gpu --mute-audio],
+    )
+  page = browser.new_page
+
+  begin
+    # Login
+    puts "Logging in as #{opts[:user]}..."
+    page.goto("#{opts[:base_url]}/session/#{opts[:user]}/become")
+    sleep 2
+
+    # Navigate to topic
+    puts "Opening topic..."
+    page.goto("#{opts[:base_url]}/t/#{topic[:slug]}/#{topic[:id]}")
+    sleep 2
+
+    # Enable shared edits if not already
+    unless page.query_selector(".shared-edit")
+      puts "Enabling shared edits..."
+      page.query_selector(".show-more-actions")&.click
+      sleep 0.3
+      page.query_selector(".show-post-admin-menu")&.click
+      sleep 0.3
+      page.query_selector(".admin-toggle-shared-edits")&.click
+      sleep 1
+    end
+
+    # Open composer
+    puts "Opening shared edit composer..."
+    page.wait_for_selector(".shared-edit", timeout: 5000).click
+    sleep 2
+    page.wait_for_selector("#reply-control.open", timeout: 10_000)
+    puts "Composer ready"
+
+    puts "-" * 50
+    puts "Typing... (Ctrl+C to stop)"
+    puts "-" * 50
+
+    focus_editor(page)
+
+    # Main typing loop
+    idx = 0
+    loop do
+      phrase = PHRASES[idx % PHRASES.length]
+      idx += 1
+
+      type_phrase(page, phrase, speed)
+      puts
+      $stdout.flush
+      sleep(random_delay(speed[:phrase_ms]))
+    end
+  rescue Interrupt
+    puts "\n\nStopped by user."
+  ensure
+    browser.close
+  end
+end

@@ -22,18 +22,24 @@ after_initialize do
     end
   end
 
-  require_relative "lib/ot_text_unicode"
+  require_relative "lib/discourse_shared_edits/yjs"
+  require_relative "lib/discourse_shared_edits/state_validator"
+  require_relative "lib/discourse_shared_edits/protocol"
   require_relative "app/models/shared_edit_revision"
   require_relative "app/controllers/discourse_shared_edits/revision_controller"
+  require_relative "app/services/discourse_shared_edits/revise"
   require_relative "app/jobs/commit_shared_revision"
   require_relative "lib/discourse_shared_edits/guardian_extension"
 
   ::DiscourseSharedEdits::Engine.routes.draw do
-    put "/p/:post_id/enable" => "revision#enable"
-    put "/p/:post_id/disable" => "revision#disable"
-    put "/p/:post_id" => "revision#revise"
-    get "/p/:post_id" => "revision#latest"
-    put "/p/:post_id/commit" => "revision#commit"
+    put "/p/:post_id/enable" => "revision#enable", :defaults => { format: :json }
+    put "/p/:post_id/disable" => "revision#disable", :defaults => { format: :json }
+    put "/p/:post_id" => "revision#revise", :defaults => { format: :json }
+    get "/p/:post_id" => "revision#latest", :defaults => { format: :json }
+    put "/p/:post_id/commit" => "revision#commit", :defaults => { format: :json }
+    get "/p/:post_id/health" => "revision#health", :defaults => { format: :json }
+    post "/p/:post_id/recover" => "revision#recover", :defaults => { format: :json }
+    post "/p/:post_id/reset" => "revision#reset", :defaults => { format: :json }
   end
 
   Discourse::Application.routes.append { mount ::DiscourseSharedEdits::Engine, at: "/shared_edits" }
@@ -41,6 +47,7 @@ after_initialize do
   reloadable_patch { Guardian.prepend(DiscourseSharedEdits::GuardianExtension) }
 
   register_post_custom_field_type(DiscourseSharedEdits::SHARED_EDITS_ENABLED, :boolean)
+  register_post_custom_field_type("shared_edits_editor_usernames", :json)
   topic_view_post_custom_fields_allowlister { [DiscourseSharedEdits::SHARED_EDITS_ENABLED] }
 
   add_to_serializer(:post, :shared_edits_enabled) do

@@ -20,10 +20,20 @@ export default {
             @service sharedEditManager;
 
             async open(opts) {
+              if (opts.action === SHARED_EDIT_ACTION && opts.post?.id) {
+                const subscription = await this.sharedEditManager.subscribe(
+                  opts.post.id,
+                  { preOpen: true }
+                );
+                if (subscription?.reply !== undefined) {
+                  opts.reply = subscription.reply;
+                }
+              }
+
               await super.open(...arguments);
 
-              if (opts.action === SHARED_EDIT_ACTION) {
-                await this.sharedEditManager.subscribe();
+              if (opts.action === SHARED_EDIT_ACTION && opts.post?.id) {
+                await this.sharedEditManager.finalizeSubscription();
               }
             }
 
@@ -34,11 +44,25 @@ export default {
               return super.collapse(...arguments);
             }
 
-            close() {
-              if (this.model?.action === SHARED_EDIT_ACTION) {
-                this.sharedEditManager.commit();
+            async close() {
+              const wasSharedEdit = this.model?.action === SHARED_EDIT_ACTION;
+
+              // Suppress composer observer during close to prevent Y.Text from being
+              // wiped when model.reply is cleared
+              if (wasSharedEdit) {
+                this.sharedEditManager.suppressComposerChange = true;
               }
-              return super.close(...arguments);
+              try {
+                const result = await super.close(...arguments);
+                if (wasSharedEdit) {
+                  await this.sharedEditManager.commit();
+                }
+                return result;
+              } finally {
+                if (wasSharedEdit) {
+                  this.sharedEditManager.suppressComposerChange = false;
+                }
+              }
             }
 
             save() {

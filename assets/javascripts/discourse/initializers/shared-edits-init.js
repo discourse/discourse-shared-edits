@@ -1,14 +1,61 @@
+import { action } from "@ember/object";
+import { service } from "@ember/service";
+import { htmlSafe } from "@ember/template";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
+import { USER_OPTION_COMPOSITION_MODES } from "discourse/lib/constants";
+import { iconHTML } from "discourse/lib/icon-library";
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { SAVE_ICONS, SAVE_LABELS } from "discourse/models/composer";
+import {
+  registerCustomizationCallback,
+  SAVE_ICONS,
+  SAVE_LABELS,
+} from "discourse/models/composer";
 import SharedEditButton from "../components/shared-edit-button";
+import sharedEditsProsemirrorExtension from "../lib/shared-edits-prosemirror-extension";
 
 const SHARED_EDIT_ACTION = "sharedEdit";
 
-function initWithApi(api) {
+function formatSharedEditActionTitle(model) {
+  if (model.action !== SHARED_EDIT_ACTION) {
+    return;
+  }
+
+  const opts = model.replyOptions;
+  if (!opts?.userAvatar || !opts?.userLink || !opts?.postLink) {
+    return;
+  }
+
+  return htmlSafe(`
+    ${iconHTML("far-pen-to-square", { title: "shared_edits.composer_title" })}
+    <a class="post-link" href="${opts.postLink.href}">${opts.postLink.anchor}</a>
+    ${opts.userAvatar}
+    <span class="username">${opts.userLink.anchor}</span>
+  `);
+}
+
+function initWithApi(api, siteSettings) {
   SAVE_LABELS[SHARED_EDIT_ACTION] = "composer.save_edit";
   SAVE_ICONS[SHARED_EDIT_ACTION] = "pencil";
+
+  registerCustomizationCallback({
+    actionTitle: formatSharedEditActionTitle,
+  });
+
+  api.registerValueTransformer(
+    "composer-force-editor-mode",
+    ({ value, context }) => {
+      if (context.model?.action === SHARED_EDIT_ACTION) {
+        if (siteSettings?.shared_edits_editor_mode === "rich") {
+          return USER_OPTION_COMPOSITION_MODES.rich;
+        }
+        return USER_OPTION_COMPOSITION_MODES.markdown;
+      }
+      return value;
+    }
+  );
+
+  api.registerRichEditorExtension(sharedEditsProsemirrorExtension);
 
   customizePostMenu(api);
 
@@ -85,16 +132,63 @@ function initWithApi(api) {
           );
         }
 
-        _handleSharedEditOnPost(post) {
+        async _handleSharedEditOnPost(post) {
           const draftKey = post.get("topic.draft_key");
           const draftSequence = post.get("topic.draft_sequence");
+
+          let raw;
+          try {
+            const result = await ajax(`/posts/${post.id}.json`);
+            raw = result.raw;
+          } catch (e) {
+            popupAjaxError(e);
+            return;
+          }
 
           this.get("composer").open({
             post,
             action: SHARED_EDIT_ACTION,
             draftKey,
             draftSequence,
+            reply: raw,
           });
+        }
+      }
+  );
+
+  api.modifyClass(
+    "component:d-editor",
+    (Superclass) =>
+      class extends Superclass {
+        @service composer;
+        @service sharedEditManager;
+
+        @action
+        onChange(event) {
+          super.onChange(event);
+
+          if (this.composer?.model?.action !== SHARED_EDIT_ACTION) {
+            return;
+          }
+
+          this.sharedEditManager?.syncFromComposerValue?.(
+            event?.target?.value ?? ""
+          );
+        }
+      }
+  );
+
+  api.modifyClass(
+    "component:composer-messages",
+    (Superclass) =>
+      class extends Superclass {
+        async _findMessages() {
+          if (this.composer?.action === SHARED_EDIT_ACTION) {
+            this.set("checkedMessages", true);
+            return;
+          }
+
+          return super._findMessages(...arguments);
         }
       }
   );
@@ -120,7 +214,6 @@ function customizePostMenu(api) {
     }
   );
 
-  // register the property as tracked to ensure the button is correctly updated
   api.addTrackedPostProperties("shared_edits_enabled");
 }
 
@@ -132,6 +225,6 @@ export default {
       return;
     }
 
-    withPluginApi(initWithApi);
+    withPluginApi((api) => initWithApi(api, siteSettings));
   },
 };
