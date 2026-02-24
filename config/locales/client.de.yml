@@ -13,3 +13,11 @@ de:
       button_title: "Beitrag gemeinsam bearbeiten"
       composer_title: "Der Beitrag wird gemeinsam bearbeitet"
       done: "Erledigt"
+      errors:
+        rich_mode_failed: "Die Funktion „Gemeinsame Bearbeitungen“ konnte die Plug-ins für die Zusammenarbeit im Rich-Editor nicht laden. Der Editor wurde geschlossen; bitte versuche es erneut oder wechsle in den Markdown-Modus."
+        invalid_update: "Die Funktion „Geteilte Bearbeitungen“ konnte die letzte Aktualisierung nicht anwenden. Bitte aktualisiere und versuche es erneut."
+        blank_state_rejected: "Die Funktion „Gemeinsame Bearbeitungen“ wurde gestoppt, weil der Server eine Änderung festgestellt hat, die den Beitrag löschen würde. Bitte öffne den Editor erneut, um ihn zu synchronisieren."
+        recovery_not_needed: "Eine Wiederherstellung ist nur erforderlich, wenn der Status der gemeinsamen Bearbeitung fehlerhaft ist."
+        commit_failed: "Die gemeinsame Bearbeitung konnte für diesen Beitrag nicht übernommen werden."
+        disable_failed: "Die gemeinsame Bearbeitung konnte nicht deaktiviert werden, da die ausstehenden Änderungen nicht übernommen werden konnten."
+        reset_failed: "Der Verlauf der gemeinsamen Bearbeitung konnte nicht zurückgesetzt werden, da die ausstehenden Änderungen nicht übernommen werden konnten."
