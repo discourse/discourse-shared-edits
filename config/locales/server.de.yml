@@ -7,5 +7,20 @@
 de:
   shared_edits:
     reason: "Bearbeitet von: %{users}"
+    errors:
+      state_corrupted: "Der Status der gemeinsamen Bearbeitung ist beschädigt und konnte nicht wiederhergestellt werden. Bitte versuche es noch einmal."
+      state_recovered: "Der Status der gemeinsamen Bearbeitung war beschädigt, wurde aber wiederhergestellt. Bitte aktualisiere, um mit der Bearbeitung fortzufahren."
+      needs_recovery_text: "Der Status der gemeinsamen Bearbeitung muss wiederhergestellt werden. Bitte versuche es erneut."
+      recovery_failed: "Der Status der gemeinsamen Bearbeitung konnte nicht wiederhergestellt werden. Bitte aktualisiere und versuche es erneut."
+      recovery_not_needed: "Die Wiederherstellung der gemeinsamen Bearbeitung ist nur zulässig, wenn der geteilte Status fehlerhaft ist."
+      commit_failed: "Die gemeinsamen Bearbeitungen konnten nicht in diesen Beitrag übernommen werden."
+      disable_failed: "Die gemeinsame Bearbeitung konnte nicht deaktiviert werden, da die ausstehenden Änderungen nicht übernommen werden konnten."
+      reset_failed: "Der Verlauf der gemeinsamen Bearbeitung konnte nicht zurückgesetzt werden, da die ausstehenden Änderungen nicht übernommen werden konnten."
+      blank_state_rejected: "Wir haben eine gemeinsame Bearbeitung blockiert, weil dadurch der gesamte Beitrag gelöscht worden wäre. Bitte öffne den Editor erneut, um das gemeinsame Dokument zu aktualisieren."
+      invalid_update: "Die Aktualisierungsdatei war fehlerhaft. Bitte aktualisiere die Seite und versuche es erneut."
+      post_length_exceeded: "Der Inhalt des Beitrags überschreitet die maximale Länge (%{current}/%{max} Zeichen)"
+      not_initialized: "Die gemeinsame Bearbeitung ist für diesen Beitrag nicht aktiv. Bitte aktualisiere und versuche es erneut."
   site_settings:
     shared_edits_enabled: Ermögliche die gemeinsame Bearbeitung von bestimmten Beiträgen.
+    shared_edits_editor_mode: "Editor-Modus für gemeinsame Bearbeitungen: „markdown“ verwendet einfachen Text, „rich“ verwendet den ProseMirror Rich-Text-Editor."
+    shared_edits_commit_delay_seconds: "Wartezeit in Sekunden, bevor gemeinsame Bearbeitungen an den Beitrag übertragen werden. Niedrigere Werte führen zu häufigeren Übertragungen, können aber die Serverlast erhöhen."
