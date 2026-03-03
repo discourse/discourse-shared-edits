@@ -7,5 +7,20 @@
 tr_TR:
   shared_edits:
     reason: "Düzenleyen: %{users}"
+    errors:
+      state_corrupted: "Ortak düzenleme durumu bozulmuş ve kurtarılamamıştır. Lütfen tekrar deneyin."
+      state_recovered: "Ortak düzenleme durumu bozulmuştu ancak düzeltildi. Düzenlemeye devam etmek için lütfen sayfayı yenileyin."
+      needs_recovery_text: "Ortak düzenleme durumu kurtarılması gerekiyor. Lütfen tekrar deneyin."
+      recovery_failed: "Ortak düzenleme durumu kurtarılamadı. Lütfen yenileyin ve tekrar deneyin."
+      recovery_not_needed: "Ortak düzenleme kurtarma işlemi yalnızca paylaşılan durum sağlıksız olduğunda izin verilir."
+      commit_failed: "Bu gönderiye ortak düzenlemeler kaydedilemedi."
+      disable_failed: "Bekleyen değişiklikler kaydedilemediği için paylaşılan düzenlemeler devre dışı bırakılamadı."
+      reset_failed: "Bekleyen değişiklikler kaydedilemediği için paylaşılan düzenleme geçmişi sıfırlanamadı."
+      blank_state_rejected: "Tüm gönderiyi sileceği için ortak düzenlemeyi engelledik. Paylaşılan belgeyi yenilemek için lütfen düzenleyiciyi yeniden açın."
+      invalid_update: "Güncelleme yükü hatalı biçimlendirilmiştir. Lütfen yenileyin ve tekrar deneyin."
+      post_length_exceeded: "Gönderi içeriği maksimum uzunluğu aşıyor (%{current}/%{max} karakter) Güncelleme yükü hatalı biçimlendirildi. Lütfen sayfayı yenileyin ve tekrar deneyin."
+      not_initialized: "Bu gönderide ortak düzenleme özelliği etkin değildir. Lütfen sayfayı yenileyin ve tekrar deneyin."
   site_settings:
     shared_edits_enabled: Belirlenen gönderilerde paylaşılan, iş birliğine dayalı düzenlemeyi etkinleştirin.
+    shared_edits_editor_mode: "Paylaşılan düzenlemeler için düzenleme modu: markdown düz metin kullanır, rich ise ProseMirror zengin metin düzenleyicisini kullanır."
+    shared_edits_commit_delay_seconds: "Yazıya ortak düzenlemeleri kaydetmeden önce beklemek için gereken saniye sayısı. Düşük değerler daha sık kaydetme yapar ancak sunucu yükünü artırabilir."

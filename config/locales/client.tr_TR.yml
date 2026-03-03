@@ -11,4 +11,13 @@ tr_TR:
       disable_shared_edits: "Paylaşılan Düzenlemeleri Devre Dışı Bırak"
       edit: "Düzenle"
       button_title: "Gönderiyi İş Birliği İçinde Düzenleyin"
+      composer_title: "Gönderi ortaklaşa düzenleniyor"
       done: "Tamamlandı"
+      errors:
+        rich_mode_failed: "Paylaşılan düzenlemeler, zengin düzenleyici işbirliği eklentilerini yükleyemedi. Oluşturucu kapatıldı; lütfen tekrar deneyin veya markdown moduna geçin."
+        invalid_update: "Paylaşılan düzenlemeler en son güncellemeyi uygulayamadı. Lütfen sayfayı yenileyin ve tekrar deneyin."
+        blank_state_rejected: "Sunucu, gönderiyi silecek bir değişiklik algıladığı için paylaşılan düzenlemeler durduruldu. Yeniden senkronize etmek için düzenleyiciyi yeniden açın."
+        recovery_not_needed: "Kurtarma işlemi yalnızca paylaşılan düzenleme durumu sağlıksız olduğunda gereklidir."
+        commit_failed: "Bu gönderi için paylaşılan düzenlemeler kaydedilemedi."
+        disable_failed: "Bekleyen değişiklikler kaydedilemediği için paylaşılan düzenlemeler devre dışı bırakılamadı."
+        reset_failed: "Bekleyen değişiklikler kaydedilemediği için paylaşılan düzenleme geçmişi sıfırlanamadı."
