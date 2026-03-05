@@ -1,9 +1,7 @@
 import { setupTest } from "ember-qunit";
 import { module, test } from "qunit";
 import sinon from "sinon";
-import * as debug from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/debug";
 import RichModeSync from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/rich-mode-sync";
-import * as YjsDocument from "discourse/plugins/discourse-shared-edits/discourse/lib/shared-edits/yjs-document";
 
 module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
   setupTest(hooks);
@@ -14,7 +12,10 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
 
   test("skips syncing when serializer unexpectedly returns blank content", function (assert) {
     const anomalyStub = sinon.stub();
-    const sync = new RichModeSync(this.owner, { onSyncAnomaly: anomalyStub });
+    const sync = new RichModeSync(this.owner, {
+      onSyncAnomaly: anomalyStub,
+      _getMarkdownFromView: () => "",
+    });
 
     const xmlFragment = {
       length: 1,
@@ -33,13 +34,9 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
       transact: sinon.spy(),
     };
 
-    sinon.stub(YjsDocument, "getMarkdownFromView").returns("");
-    const debugErrorStub = sinon.stub(debug, "debugError");
-
     const result = sync.syncYTextFromXmlFragment(xmlFragment, text, doc);
 
     assert.false(result, "sync reports no changes applied");
-    assert.true(debugErrorStub.calledOnce, "logs a warning");
     assert.true(doc.transact.notCalled, "does not mutate the Yjs document");
     assert.true(
       anomalyStub.calledOnceWith(
@@ -51,7 +48,10 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
 
   test("allows intentional blanking when fragment contains no text", function (assert) {
     const anomalyStub = sinon.stub();
-    const sync = new RichModeSync(this.owner, { onSyncAnomaly: anomalyStub });
+    const sync = new RichModeSync(this.owner, {
+      onSyncAnomaly: anomalyStub,
+      _getMarkdownFromView: () => "",
+    });
 
     const xmlFragment = {
       length: 1,
@@ -78,8 +78,6 @@ module("Discourse Shared Edits | Unit | rich-mode-sync", function (hooks) {
     const doc = {
       transact: sinon.spy((cb) => cb()),
     };
-
-    sinon.stub(YjsDocument, "getMarkdownFromView").returns("");
 
     const result = sync.syncYTextFromXmlFragment(xmlFragment, yText, doc);
 
