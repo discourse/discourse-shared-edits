@@ -24,6 +24,7 @@ export default class RichModeSync {
   #xmlFragmentObserver = null;
   #awarenessUpdateHandler = null;
   #onSyncAnomaly = null;
+  #getMarkdownFromViewOverride = null;
 
   // Callbacks
   #onError = null;
@@ -47,10 +48,11 @@ export default class RichModeSync {
   _richModeFailed = false;
   _handlingRichModeFailure = false;
 
-  constructor(context, { onError, onSyncAnomaly } = {}) {
+  constructor(context, { onError, onSyncAnomaly, _getMarkdownFromView } = {}) {
     setOwner(this, getOwner(context));
     this.#onError = onError;
     this.#onSyncAnomaly = onSyncAnomaly;
+    this.#getMarkdownFromViewOverride = _getMarkdownFromView;
   }
 
   // Setup
@@ -101,7 +103,9 @@ export default class RichModeSync {
       return false;
     }
 
-    let newText = getMarkdownFromView({ consumeCapture: consumeMarkdown });
+    const getMarkdownFn =
+      this.#getMarkdownFromViewOverride || getMarkdownFromView;
+    let newText = getMarkdownFn({ consumeCapture: consumeMarkdown });
     if (newText === null) {
       // ProseMirror serialization unavailable - this is a degraded state
       // Log a warning and attempt the lossy fallback only as last resort
