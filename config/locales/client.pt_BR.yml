@@ -11,4 +11,13 @@ pt_BR:
       disable_shared_edits: "Desativar edições compartilhadas"
       edit: "Editar"
       button_title: "Editar postagem colaborativamente"
+      composer_title: "A postagem está sendo editada de forma colaborativa"
       done: "Concluído(a)"
+      errors:
+        rich_mode_failed: "As edições compartilhadas não conseguiram carregar os plugins de colaboração do editor avançado. O editor foi fechado. Tente novamente ou mude para o modo Markdown."
+        invalid_update: "As edições compartilhadas não puderam aplicar a atualização mais recente. Atualize a página e tente novamente."
+        blank_state_rejected: "As edições compartilhadas foram interrompidas porque o servidor detectou uma alteração que apagaria a postagem. Reabra o compositor para ressincronizar."
+        recovery_not_needed: "A recuperação só é necessária quando o estado de edição compartilhada não estiver íntegro."
+        commit_failed: "Não foi possível fazer commit das edições compartilhadas desta postagem."
+        disable_failed: "Não foi possível desativar as edições compartilhadas porque não foi possível fazer commit das alterações pendentes."
+        reset_failed: "O histórico compartilhado de edições não pôde ser redefinido porque não foi possível fazer commit das alterações pendentes."

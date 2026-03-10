@@ -7,5 +7,20 @@
 zh_CN:
   shared_edits:
     reason: "编辑者：%{users}"
+    errors:
+      state_corrupted: "协作编辑状态已损坏，无法恢复。请重试。"
+      state_recovered: "协作编辑状态已损坏，但已恢复。请刷新以继续编辑。"
+      needs_recovery_text: "协作编辑状态需要恢复。请重试。"
+      recovery_failed: "无法恢复协作编辑状态。请刷新并重试。"
+      recovery_not_needed: "只有共享状态不正常时，才可以进行协作编辑恢复。"
+      commit_failed: "无法将协作编辑内容提交到此帖子。"
+      disable_failed: "无法禁用共享编辑，因为无法提交待处理的更改。"
+      reset_failed: "无法重置共享编辑历史记录，因为无法提交待处理的更改。"
+      blank_state_rejected: "我们阻止了协作编辑，因为这会删除整个帖子。请重新打开编辑器以刷新共享文档。"
+      invalid_update: "更新有效负载格式错误。请刷新并重试。"
+      post_length_exceeded: "帖子内容超过最大长度（%{current}/%{max} 个字符）"
+      not_initialized: "此帖子的共享编辑未处于有效状态。请刷新并重试。"
   site_settings:
     shared_edits_enabled: 在指定帖子上启用共享协作编辑。
+    shared_edits_editor_mode: "共享编辑的编辑器模式：Markdown 模式使用纯文本，rich 模式使用 ProseMirror 富文本编辑器。"
+    shared_edits_commit_delay_seconds: "将协作编辑内容提交到该帖子前的等待秒数。数值越低，提交频率越高，服务器的负载也可能会越大。"

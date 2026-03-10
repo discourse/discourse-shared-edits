@@ -7,5 +7,20 @@
 pt_BR:
   shared_edits:
     reason: "Edição de: %{users}"
+    errors:
+      state_corrupted: "O estado da edição colaborativa foi corrompido e não pôde ser recuperado. Tente novamente."
+      state_recovered: "O estado da edição colaborativa foi corrompido, mas já foi recuperado. Atualize a página para continuar a edição."
+      needs_recovery_text: "O estado de edição colaborativa precisa ser recuperado. Tente novamente."
+      recovery_failed: "Não foi possível recuperar o estado de edição colaborativa. Atualize a página e tente novamente."
+      recovery_not_needed: "A recuperação da edição colaborativa só é permitida quando o estado compartilhado não estiver íntegro."
+      commit_failed: "Não foi possível fazer commit das edições colaborativas desta postagem."
+      disable_failed: "Não foi possível desativar as edições compartilhadas porque não foi possível fazer commit das alterações pendentes."
+      reset_failed: "O histórico compartilhado de edições não pôde ser redefinido porque não foi possível fazer commit das alterações pendentes."
+      blank_state_rejected: "Bloqueamos uma edição colaborativa porque ela apagaria toda a postagem. Abra o compositor novamente para atualizar o documento compartilhado."
+      invalid_update: "A carga útil da atualização estava malformada. Atualize e tente novamente."
+      post_length_exceeded: "O conteúdo da postagem excede o comprimento máximo (%{current}/%{max} caracteres)"
+      not_initialized: "A edição compartilhada não está ativa nesta postagem. Atualize a página e tente novamente."
   site_settings:
     shared_edits_enabled: Ative edições colaborativas e compartilhadas nas postagens designadas.
+    shared_edits_editor_mode: "Modo de edição para edições compartilhadas: o modo Markdown usa texto simples, enquanto o modo Rich usa o editor de texto avançado ProseMirror."
+    shared_edits_commit_delay_seconds: "Segundos a aguardar antes de fazer commit das edições colaborativas da postagem. Valores menores resultam em commits mais frequentes, mas podem aumentar a sobrecarga do servidor."
