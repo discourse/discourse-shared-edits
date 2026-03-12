@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "rails_helper"
-
 RSpec.describe DiscourseSharedEdits::Yjs do
   describe ".state_from_text" do
     it "encodes text into a Yjs state and returns the same content" do

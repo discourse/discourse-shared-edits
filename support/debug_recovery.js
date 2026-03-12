@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 // Debug script to trace the content flow during recovery
 const { chromium } = require("playwright");
 const { execSync } = require("child_process");
