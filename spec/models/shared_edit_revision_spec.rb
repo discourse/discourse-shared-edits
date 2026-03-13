@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "rails_helper"
-
 RSpec.describe SharedEditRevision do
   before do
     unless ActiveRecord::Base.connection.data_source_exists?(:shared_edit_revisions)

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "rails_helper"
 RSpec.describe DiscourseSharedEdits::StateValidator do
   describe ".validate_state" do
     it "returns valid for a properly encoded state" do

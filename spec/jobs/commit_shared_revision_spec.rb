@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "rails_helper"
-
 RSpec.describe Jobs::CommitSharedRevision do
   fab!(:post) { Fabricate(:post, raw: "Original content") }
   fab!(:user)

@@ -1,3 +1,4 @@
+/* eslint-disable ember/no-observers */
 /**
  * SharedEditManager - Orchestrator service for collaborative editing.
  *
