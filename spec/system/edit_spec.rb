@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe "Discourse Shared Edits | Editing a post", system: true do
+RSpec.describe "Discourse Shared Edits | Editing a post" do
   fab!(:admin)
   fab!(:post) { Fabricate(:post, user: admin, raw: "lorem ipsum\n") }
   fab!(:remote_user, :user)

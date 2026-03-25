@@ -1,6 +1,6 @@
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import { USER_OPTION_COMPOSITION_MODES } from "discourse/lib/constants";
@@ -26,7 +26,7 @@ function formatSharedEditActionTitle(model) {
     return;
   }
 
-  return htmlSafe(`
+  return trustHTML(`
     ${iconHTML("far-pen-to-square", { title: "shared_edits.composer_title" })}
     <a class="post-link" href="${opts.postLink.href}">${opts.postLink.anchor}</a>
     ${opts.userAvatar}
