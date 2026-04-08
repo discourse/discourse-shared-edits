@@ -11,4 +11,13 @@ es:
       disable_shared_edits: "Deshabilitar ediciones compartidas"
       edit: "Editar"
       button_title: "Editar publicación de forma colaborativa"
+      composer_title: "La publicación se está editando de forma colaborativa"
       done: "Hecho"
+      errors:
+        rich_mode_failed: "Las ediciones compartidas no han podido cargar los plugins de colaboración del editor enriquecido. El editor se ha cerrado; inténtalo de nuevo o cambia al modo Markdown."
+        invalid_update: "Las ediciones compartidas no se han podido aplicar a la última actualización. Actualiza e inténtalo de nuevo."
+        blank_state_rejected: "Las ediciones compartidas se han detenido porque el servidor ha detectado un cambio que borraría la publicación. Vuelve a abrir el editor para volver a sincronizar."
+        recovery_not_needed: "La recuperación solo es necesaria cuando el estado de edición compartida no es bueno."
+        commit_failed: "Las ediciones compartidas de esta publicación no se han podido guardar."
+        disable_failed: "Las ediciones compartidas no se han podido deshabilitar porque no se han podido guardar los cambios pendientes."
+        reset_failed: "El historial de ediciones compartidas no se ha podido restablecer porque no se han podido guardar los cambios pendientes."

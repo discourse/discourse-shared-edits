@@ -7,5 +7,20 @@
 es:
   shared_edits:
     reason: "Editado por: %{users}"
+    errors:
+      state_corrupted: "La edición colaborativa está dañada y no se ha podido recuperar. Inténtalo de nuevo."
+      state_recovered: "La edición colaborativa estaba dañada, pero se ha recuperado. Actualiza para seguir editando."
+      needs_recovery_text: "El estado de la edición colaborativa necesita recuperación. Inténtalo de nuevo."
+      recovery_failed: "Error al recuperar el estado de la edición colaborativa. Actualiza e inténtalo de nuevo."
+      recovery_not_needed: "La recuperación de la edición colaborativa solo está permitida cuando el estado compartido no es bueno."
+      commit_failed: "Las ediciones colaborativas de esta publicación no se han podido guardar."
+      disable_failed: "Las ediciones compartidas no se han podido deshabilitar porque no se han podido guardar los cambios pendientes."
+      reset_failed: "El historial de ediciones compartidas no se ha podido restablecer porque no se han podido guardar los cambios pendientes."
+      blank_state_rejected: "Hemos bloqueado una edición colaborativa porque habría bloqueado toda la publicación. Vuelve a abrir el editor para actualizar el documento compartido."
+      invalid_update: "La carga útil de la actualización estaba mal formada. Actualiza e inténtalo de nuevo."
+      post_length_exceeded: "El contenido de la publicación supera la longitud máxima (%{current}/%{max} caracteres)"
+      not_initialized: "La edición compartida no está activada en esta publicación. Actualiza e inténtalo de nuevo."
   site_settings:
     shared_edits_enabled: Habilitar la edición compartida y colaborativa en las publicaciones designadas.
+    shared_edits_editor_mode: "Modo de edición para ediciones compartidas: Markdown utiliza texto sin formato, mientras que Rich utiliza el editor de texto enriquecido ProseMirror."
+    shared_edits_commit_delay_seconds: "Segundos de espera antes de confirmar las ediciones colaborativas de la publicación. Los valores más bajos permiten guardar con mayor frecuencia, pero pueden aumentar la carga del servidor."
