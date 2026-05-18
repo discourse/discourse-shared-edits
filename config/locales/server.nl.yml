@@ -7,5 +7,20 @@
 nl:
   shared_edits:
     reason: "Bewerkt door: %{users}"
+    errors:
+      state_corrupted: "De status van de gezamenlijke bewerking is corrupt en kon niet worden hersteld. Probeer het opnieuw."
+      state_recovered: "De status van de gezamenlijke bewerking is beschadigd, maar is hersteld. Vernieuw om verder te gaan met bewerken."
+      needs_recovery_text: "De status van de gezamenlijke bewerking moet worden hersteld. Probeer het opnieuw."
+      recovery_failed: "Herstellen status gezamenlijke bewerking mislukt. Vernieuw de pagina en probeer het opnieuw."
+      recovery_not_needed: "Herstel van gezamenlijke bewerking is alleen toegestaan als de gedeelde toestand ongezond is."
+      commit_failed: "Gezamenlijke bewerkingen kunnen niet worden gecommit voor dit bericht."
+      disable_failed: "Gedeelde bewerkingen kunnen niet worden uitgeschakeld omdat wachtende wijzigingen niet kunnen worden gecommit."
+      reset_failed: "Geschiedenis van gedeelde bewerkingen kan niet worden gereset omdat wachtende wijzigingen niet kunnen worden gecommit."
+      blank_state_rejected: "We hebben een gezamenlijke bewerking geblokkeerd omdat dit het hele bericht zou wissen. Open de composer opnieuw om het gedeelde document te vernieuwen."
+      invalid_update: "De updatepayload is misvormd. Vernieuw en probeer het opnieuw proberen."
+      post_length_exceeded: "Berichtcontent overschrijdt maximale lengte (%{current}/%{max} tekens)"
+      not_initialized: "Gedeelde bewerking is niet actief voor dit bericht. Vernieuw probeer het opnieuw."
   site_settings:
     shared_edits_enabled: Schakel gedeeld, gezamenlijk bewerken in voor opgegeven berichten.
+    shared_edits_editor_mode: "Editormodus voor gedeelde bewerkingen: markdown gebruikt tekst zonder opmaakt, rich gebruikt de rich text-editor ProseMirror."
+    shared_edits_commit_delay_seconds: "Het aantal seconden dat moeten worden gewacht voordat samenwerkende bewerkingen worden gecommit. Lagere waarden worden vaker gecommit, maar kunnen de serverbelasting verhogen."
