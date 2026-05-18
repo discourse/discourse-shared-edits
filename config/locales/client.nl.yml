@@ -11,4 +11,13 @@ nl:
       disable_shared_edits: "Gedeelde bewerkingen uitschakelen"
       edit: "Bewerken"
       button_title: "Bericht gezamenlijk bewerken"
+      composer_title: "Bericht wordt gezamenlijk bewerkt"
       done: "Gereed"
+      errors:
+        rich_mode_failed: "Gedeelde bewerkingen kunnen de samenwerkingsplug-ins van de rich editor niet laden. De composer is gesloten, probeer het opnieuw of schakel over naar de markdownmodus."
+        invalid_update: "Gedeelde bewerkingen kunnen de nieuwste update niet toepassen. Vernieuw en probeer het opnieuw."
+        blank_state_rejected: "Gedeelde bewerkingen zijn gestopt omdat de server een wijziging heeft gedetecteerd die het bericht zou wissen. Open de composer opnieuw om opnieuw te synchroniseren."
+        recovery_not_needed: "Herstel is alleen nodig als de status van de gedeelde bewerking ongezond is."
+        commit_failed: "Gedeelde bewerkingen kunnen niet worden gecommit voor dit bericht."
+        disable_failed: "Gedeelde bewerkingen kunnen niet worden uitgeschakeld omdat wachtende wijzigingen niet kunnen worden gecommit."
+        reset_failed: "Geschiedenis van gedeelde bewerkingen kan niet worden gereset omdat wachtende wijzigingen niet kunnen worden gecommit."
