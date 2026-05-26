@@ -5,6 +5,7 @@ const SHARED_EDIT_ACTION = "sharedEdit";
 
 export default {
   name: "discourse-shared-edits-composer-service",
+  before: "inject-discourse-objects",
 
   initialize: (container) => {
     const siteSettings = container.lookup("service:site-settings");
