@@ -20,3 +20,4 @@ plugins:
     allow_any: false
     disallowed_groups: "4" # @anonymous_users
     refresh: true
+    mandatory_values: "1" # @admins
