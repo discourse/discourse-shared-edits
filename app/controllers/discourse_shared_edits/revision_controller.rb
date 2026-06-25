@@ -296,8 +296,13 @@ module ::DiscourseSharedEdits
     def recover
       guardian.ensure_can_see!(@post)
       guardian.ensure_can_toggle_shared_edits!
+      RateLimiter.new(
+        current_user,
+        "shared-edit-post-raw-recover-#{@post.id}",
+        10,
+        1.minute,
+      ).performed!
 
-      # Staff-only endpoint, skip rate limiting since it's already protected by guardian
       result =
         StateValidator.recover_from_post_raw(
           @post.id,
@@ -316,6 +321,7 @@ module ::DiscourseSharedEdits
     def reset
       guardian.ensure_can_see!(@post)
       guardian.ensure_can_toggle_shared_edits!
+      RateLimiter.new(current_user, "shared-edit-reset-#{@post.id}", 10, 1.minute).performed!
 
       new_version = SharedEditRevision.reset_history!(@post.id)
       if new_version.nil?

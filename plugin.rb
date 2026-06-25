@@ -50,6 +50,8 @@ after_initialize do
   register_post_custom_field_type("shared_edits_editor_usernames", :json)
   topic_view_post_custom_fields_allowlister { [DiscourseSharedEdits::SHARED_EDITS_ENABLED] }
 
+  add_to_serializer(:current_user, :can_toggle_shared_edits) { scope.can_toggle_shared_edits? }
+
   add_to_serializer(:post, :shared_edits_enabled) do
     if SiteSetting.shared_edits_enabled
       post_custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]

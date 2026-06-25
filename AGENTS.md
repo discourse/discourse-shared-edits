@@ -11,7 +11,7 @@
 
 ## Scope & Feature Flags
 - Lives at `plugins/discourse-shared-edits`; everything here only runs when `SiteSetting.shared_edits_enabled` (defined in `config/settings.yml`) is true and the per-post custom field `shared_edits_enabled` has been toggled via `SharedEditRevision.toggle_shared_edits!`.
-- Guardian hook (`lib/discourse_shared_edits/guardian_extension.rb`) restricts enable/disable/reset/recover endpoints to staff or trust level 4+. Reuse `guardian.ensure_can_toggle_shared_edits!` for any new privileged action. Privileged endpoints must also call `guardian.ensure_can_see!(@post)` to prevent access to posts in restricted categories.
+- Guardian hook (`lib/discourse_shared_edits/guardian_extension.rb`) restricts enable/disable/reset/recover endpoints to users in `SiteSetting.shared_edits_toggle_allowed_groups` (defaults to staff and trust level 4). Reuse `guardian.ensure_can_toggle_shared_edits!` for any new privileged action. Privileged endpoints must also call `guardian.ensure_can_see!(@post)` to prevent access to posts in restricted categories.
 - API routes live under `/shared_edits` (`plugin.rb`). Do not rename them without updating the Ember service and the Pretender fixtures in `test/javascripts`.
 
 ## Backend Architecture & Expectations

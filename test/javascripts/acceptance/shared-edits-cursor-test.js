@@ -33,7 +33,7 @@ function base64urlToUint8Array(str) {
 acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
   let updateRequestBodies;
 
-  needs.user();
+  needs.user({ can_toggle_shared_edits: true });
   needs.pretender((server, helper) => {
     updateRequestBodies = [];
 

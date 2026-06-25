@@ -5,7 +5,7 @@ import { acceptance } from "discourse/tests/helpers/qunit-helpers";
 acceptance(`Discourse Shared Edits | Composer`, function (needs) {
   let commitCalls;
 
-  needs.user();
+  needs.user({ can_toggle_shared_edits: true });
   needs.settings({
     rich_editor: true,
   });
