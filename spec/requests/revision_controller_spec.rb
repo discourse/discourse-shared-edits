@@ -2,10 +2,11 @@
 
 RSpec.describe DiscourseSharedEdits::RevisionController do
   fab!(:user)
-  fab!(:tl4_user) { Fabricate(:user, trust_level: TrustLevel[4]) }
+  fab!(:tl4_user) { Fabricate(:user, trust_level: TrustLevel[4], refresh_auto_groups: true) }
   fab!(:post1) { Fabricate(:post, user: user, raw: "Hello World, testing shared edits") }
   fab!(:admin)
   fab!(:group)
+  fab!(:toggle_group, :group)
   fab!(:private_category) { Fabricate(:private_category, group: group) }
   fab!(:private_post) { Fabricate(:post, topic: Fabricate(:topic, category: private_category)) }
 
@@ -34,6 +35,22 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       it "returns 403" do
         put "/shared_edits/p/#{post1.id}/enable"
         expect(response.status).to eq(403)
+      end
+    end
+
+    context "when user belongs to a configured toggle group" do
+      before do
+        SiteSetting.shared_edits_toggle_allowed_groups = toggle_group.id.to_s
+        toggle_group.add(user)
+        sign_in user
+      end
+
+      it "enables shared edits on a post" do
+        put "/shared_edits/p/#{post1.id}/enable"
+        expect(response.status).to eq(200)
+
+        post1.reload
+        expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to eq(true)
       end
     end
 
@@ -122,6 +139,24 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       it "returns 403" do
         put "/shared_edits/p/#{post1.id}/disable"
         expect(response.status).to eq(403)
+      end
+    end
+
+    context "when user belongs to a configured toggle group" do
+      before do
+        SiteSetting.shared_edits_toggle_allowed_groups = toggle_group.id.to_s
+        toggle_group.add(user)
+        sign_in user
+      end
+
+      it "disables shared edits on a post" do
+        SharedEditRevision.toggle_shared_edits!(post1.id, true)
+
+        put "/shared_edits/p/#{post1.id}/disable"
+        expect(response.status).to eq(200)
+
+        post1.reload
+        expect(post1.custom_fields[DiscourseSharedEdits::SHARED_EDITS_ENABLED]).to be_nil
       end
     end
   end

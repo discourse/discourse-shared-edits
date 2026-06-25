@@ -62,7 +62,7 @@ function initWithApi(api, siteSettings) {
   const currentUser = api.getCurrentUser();
 
   api.addPostAdminMenuButton((attrs) => {
-    if (!currentUser?.staff && currentUser?.trust_level < 4) {
+    if (!currentUser?.can_toggle_shared_edits) {
       return;
     }
 

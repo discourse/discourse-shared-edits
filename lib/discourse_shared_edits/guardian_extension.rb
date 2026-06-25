@@ -6,7 +6,7 @@ module DiscourseSharedEdits
 
     def can_toggle_shared_edits?
       SiteSetting.shared_edits_enabled && authenticated? &&
-        (is_staff? || @user.has_trust_level?(TrustLevel[4]))
+        @user.in_any_groups?(SiteSetting.shared_edits_toggle_allowed_groups_map)
     end
   end
 end

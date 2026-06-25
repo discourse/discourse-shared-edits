@@ -13,7 +13,7 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
   let putRequests;
   let commitCalls;
 
-  needs.user();
+  needs.user({ can_toggle_shared_edits: true });
   needs.settings({ shared_edits_enabled: true });
 
   needs.pretender((server, helper) => {
@@ -226,7 +226,7 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
 });
 
 acceptance("Discourse Shared Edits | Lifecycle with State", function (needs) {
-  needs.user();
+  needs.user({ can_toggle_shared_edits: true });
   needs.settings({ shared_edits_enabled: true });
 
   needs.pretender((server, helper) => {

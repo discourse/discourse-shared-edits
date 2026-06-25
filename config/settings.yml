@@ -13,3 +13,11 @@ plugins:
     default: 30
     min: 5
     max: 300
+  shared_edits_toggle_allowed_groups:
+    default: "1|2|14" # @admins, @moderators, @trust_level_4
+    type: group_list
+    list_type: compact
+    allow_any: false
+    disallowed_groups: "4" # @anonymous_users
+    refresh: true
+    mandatory_values: "1" # @admins

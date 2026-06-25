@@ -18,7 +18,7 @@ const TEXTAREA_SELECTOR = "#reply-control textarea.d-editor-input";
 acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
   let putRequests;
 
-  needs.user();
+  needs.user({ can_toggle_shared_edits: true });
   needs.settings({ shared_edits_enabled: true });
 
   needs.pretender((server, helper) => {
