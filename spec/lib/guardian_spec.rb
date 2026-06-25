@@ -9,7 +9,10 @@ RSpec.describe Guardian do
 
   describe "#can_toggle_shared_edits?" do
     context "when shared edits are enabled" do
-      before { SiteSetting.shared_edits_enabled = true }
+      before do
+        SiteSetting.shared_edits_enabled = true
+        SiteSetting.shared_edits_toggle_allowed_groups = "1|2|14"
+      end
 
       it "allows the default groups" do
         aggregate_failures do
@@ -34,14 +37,18 @@ RSpec.describe Guardian do
 
         aggregate_failures do
           expect(Guardian.new(user)).to be_can_toggle_shared_edits
-          expect(Guardian.new(admin)).not_to be_can_toggle_shared_edits
+          expect(Guardian.new(admin)).to be_can_toggle_shared_edits
+          expect(Guardian.new(moderator)).not_to be_can_toggle_shared_edits
           expect(Guardian.new(tl4_user)).not_to be_can_toggle_shared_edits
         end
       end
     end
 
     context "when shared edits are disabled" do
-      before { SiteSetting.shared_edits_enabled = false }
+      before do
+        SiteSetting.shared_edits_enabled = false
+        SiteSetting.shared_edits_toggle_allowed_groups = "1|2|14"
+      end
 
       it "disallows users in configured groups" do
         aggregate_failures do
