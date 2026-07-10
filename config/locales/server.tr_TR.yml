@@ -24,3 +24,4 @@ tr_TR:
     shared_edits_enabled: Belirlenen gönderilerde paylaşılan, iş birliğine dayalı düzenlemeyi etkinleştirin.
     shared_edits_editor_mode: "Paylaşılan düzenlemeler için düzenleme modu: markdown düz metin kullanır, rich ise ProseMirror zengin metin düzenleyicisini kullanır."
     shared_edits_commit_delay_seconds: "Yazıya ortak düzenlemeleri kaydetmeden önce beklemek için gereken saniye sayısı. Düşük değerler daha sık kaydetme yapar ancak sunucu yükünü artırabilir."
+    shared_edits_toggle_allowed_groups: "Gruplar, gönderilerdeki ortak düzenleme özelliğini etkinleştirebilir veya devre dışı bırakabilir."
