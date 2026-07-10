@@ -63,8 +63,9 @@ export function decodeRelativePositionFromBase64url(base64url) {
 }
 
 // Text diff algorithm - applies minimal changes to Y.Text
+export function applyDiff(yText, after) {
+  const before = yText.toString();
 
-export function applyDiff(yText, before, after) {
   if (before === after) {
     return;
   }

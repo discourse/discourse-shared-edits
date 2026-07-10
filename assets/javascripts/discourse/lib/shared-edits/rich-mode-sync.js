@@ -166,7 +166,7 @@ export default class RichModeSync {
     }
 
     doc.transact(() => {
-      applyDiff(text, currentText, newText);
+      applyDiff(text, newText);
     }, "xmlSync");
 
     return true;
