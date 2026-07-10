@@ -320,41 +320,7 @@ export default class MarkdownSync {
         return;
       }
 
-      let appliedSurgically = false;
-
-      if (event.delta) {
-        let expectedOldLength = textValue.length;
-        let insertLen = 0;
-        let deleteLen = 0;
-
-        for (const op of event.delta) {
-          if (op.insert) {
-            insertLen += typeof op.insert === "string" ? op.insert.length : 0;
-          } else if (op.delete) {
-            deleteLen += op.delete;
-          }
-        }
-        expectedOldLength = expectedOldLength - insertLen + deleteLen;
-
-        if (currentValue.length === expectedOldLength) {
-          let index = 0;
-          event.delta.forEach((op) => {
-            if (op.retain) {
-              index += op.retain;
-            } else if (op.insert) {
-              textarea.setRangeText(op.insert, index, index);
-              index += op.insert.length;
-            } else if (op.delete) {
-              textarea.setRangeText("", index, index + op.delete);
-            }
-          });
-          appliedSurgically = true;
-        }
-      }
-
-      if (!appliedSurgically) {
-        this.#applyDiffToTextarea(textarea, currentValue, textValue);
-      }
+      this.#applyDiffToTextarea(textarea, currentValue, textValue);
 
       this.cursorOverlay?.refresh();
 
