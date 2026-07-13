@@ -95,18 +95,13 @@ function initWithApi(api, siteSettings) {
     }
   });
 
-  api.modifyClass(
-    "model:composer",
-    (Superclass) =>
-      class extends Superclass {
-        get creatingSharedEdit() {
-          return this.get("action") === SHARED_EDIT_ACTION;
-        }
+  api.addModelGetter("composer", "creatingSharedEdit", function () {
+    return this.get("action") === SHARED_EDIT_ACTION;
+  });
 
-        get editingPost() {
-          return super.editingPost || this.creatingSharedEdit;
-        }
-      }
+  api.registerValueTransformer(
+    "composer-editing-post",
+    ({ value, context }) => value || context.composer.creatingSharedEdit
   );
 
   api.modifyClass(
