@@ -90,10 +90,15 @@ export default class SharedEditManager extends Service {
   #richModeFailed = false;
   #sessionState = SESSION_STATE.IDLE;
   #commitPromise = null;
+  #discardingReplacedDocument = false;
   #lastInvalidUpdateAlertAt = 0;
 
   // Event handlers
   #handleDocUpdate = (update, origin) => {
+    if (this.#sessionState === SESSION_STATE.RESYNCING) {
+      return;
+    }
+
     // Skip remote updates (already applied, don't need to send back)
     if (origin === "remote" || origin === SHARED_EDITS_MESSAGE_ACTIONS.RESYNC) {
       return;
@@ -128,7 +133,11 @@ export default class SharedEditManager extends Service {
     // For local changes, capture relative selection before applying changes
     // For remote changes, we use transformSelection with the delta instead
     const isRemote = transaction?.origin?.type === "remote";
-    if (!isRemote && !this.#markdownSync.isSelecting) {
+    if (
+      !isRemote &&
+      transaction?.origin !== this.#yjsDocument?.undoManager &&
+      !this.#markdownSync.isSelecting
+    ) {
       this.#markdownSync.setPendingRelativeSelection(
         this.#markdownSync.captureRelativeSelection(this.#yjsDocument?.text)
       );
@@ -202,6 +211,26 @@ export default class SharedEditManager extends Service {
       );
     }
 
+    if (
+      !this.isRichMode &&
+      !message.updateBinary &&
+      message.cursor &&
+      this.#markdownSync
+    ) {
+      const cursor = this.#markdownSync.deserializeCursorPayload(
+        message.cursor
+      );
+      this.#markdownSync.handleRemoteCursor(
+        cursor,
+        {
+          client_id: message.client_id,
+          user_id: message.user_id,
+          username: message.username,
+        },
+        this.#yjsDocument.doc
+      );
+    }
+
     // Apply document update
     if (message.updateBinary) {
       if (this.isRichMode) {
@@ -233,7 +262,7 @@ export default class SharedEditManager extends Service {
     this.#handleResync();
   };
 
-  #handleResync = async () => {
+  #handleResync = async (resyncMessage = {}) => {
     if (this.#isCommitting()) {
       return;
     }
@@ -250,11 +279,31 @@ export default class SharedEditManager extends Service {
       return;
     }
 
-    // Clear pending state before fetching new state
-    if (this.#networkManager) {
-      this.#networkManager.pendingUpdates = [];
-      this.#networkManager.pendingAwarenessUpdate = null;
+    if (resyncMessage.replace) {
+      this.dialog.alert(i18n("shared_edits.errors.document_replaced"));
     }
+
+    if (this.isRichMode && resyncMessage.replace) {
+      this.#discardingReplacedDocument = true;
+      this.#networkManager?.discardPendingUpdates();
+      this.#richModeSync?.cancelPendingEditorBinding();
+      try {
+        await this.composer.close();
+        if (this.#discardingReplacedDocument) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+      } catch (error) {
+        popupAjaxError(error);
+      } finally {
+        if (this.#discardingReplacedDocument) {
+          this.#cleanup();
+        }
+      }
+      return;
+    }
+
+    // Clear pending state before fetching new state
+    this.#networkManager?.discardPendingUpdates();
 
     try {
       const data = await this.#networkManager?.fetchState(postId);
@@ -323,7 +372,11 @@ export default class SharedEditManager extends Service {
 
         let pendingText = this.#yjsDocument?.getText() ?? data.raw ?? "";
         const localText = this.composer?.model?.reply;
-        if (typeof localText === "string" && localText !== pendingText) {
+        if (
+          !resyncMessage.replace &&
+          typeof localText === "string" &&
+          localText !== pendingText
+        ) {
           this.#yjsDocument?.doc?.transact(
             () => applyDiff(this.#yjsDocument.text, pendingText, localText),
             this
@@ -332,7 +385,9 @@ export default class SharedEditManager extends Service {
         }
         this.pendingComposerReply = pendingText;
         this.#composerReady = false;
-        this.#queueMissingUpdatesFromServerState(data.state);
+        if (!resyncMessage.replace) {
+          this.#queueMissingUpdatesFromServerState(data.state);
+        }
         await this.finalizeSubscription();
       }
     } catch (e) {
@@ -516,6 +571,14 @@ export default class SharedEditManager extends Service {
         this.#yjsDocument.text,
         this.#yjsDocument.undoManager
       );
+      this.#markdownSync.onSelectionChange = () => {
+        const cursor = this.#markdownSync?.buildCursorPayload(
+          this.#yjsDocument?.text
+        );
+        if (cursor) {
+          this.#networkManager?.queueCursorUpdate(cursor);
+        }
+      };
       this.#markdownSync.onSelectionEnd = () => {
         this.#markdownSync.syncTextareaAfterSelection(
           this.#yjsDocument.text,
@@ -540,6 +603,12 @@ export default class SharedEditManager extends Service {
   }
 
   async commit() {
+    if (this.#discardingReplacedDocument) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      this.#cleanup();
+      return;
+    }
+
     // Re-entrancy guard: if already committing, return the same promise
     if (this.#commitPromise) {
       return this.#commitPromise;
@@ -814,6 +883,7 @@ export default class SharedEditManager extends Service {
     this.#richModeFailed = false;
     this.#sessionState = SESSION_STATE.IDLE;
     this.#commitPromise = null;
+    this.#discardingReplacedDocument = false;
     this.#lastInvalidUpdateAlertAt = 0;
     this.suppressComposerChange = false;
   }

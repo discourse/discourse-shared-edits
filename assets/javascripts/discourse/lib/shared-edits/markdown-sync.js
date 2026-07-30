@@ -22,13 +22,16 @@ export default class MarkdownSync {
 
   cursorOverlay = null;
 
-  // Callback for when selection ends with skipped updates
+  // Callbacks for selection synchronization and cursor presence
   onSelectionEnd = null;
+  onSelectionChange = null;
   #isSelecting = false;
   #detached = false;
   #selectionListenersAttached = false;
   #skippedUpdatesDuringSelection = false;
+  #skippedSelectionDeltas = [];
   #pendingRelativeSelection = null;
+  #text = null;
   #spellcheckTimeoutId = null;
   #spellcheckRestoreValue = null;
   #spellcheckTextarea = null;
@@ -40,6 +43,7 @@ export default class MarkdownSync {
   #onTextareaMouseDown = () => {
     this.#isSelecting = true;
     this.#skippedUpdatesDuringSelection = false;
+    this.#skippedSelectionDeltas = [];
   };
 
   #onTextareaKeydown = (event) => {
@@ -52,6 +56,9 @@ export default class MarkdownSync {
 
     if (isCtrl && !isShift && event.key.toLowerCase() === "z") {
       event.preventDefault();
+      this.#pendingRelativeSelection = this.captureRelativeSelection(
+        this.#text
+      );
       this.#undoManager.undo();
     }
 
@@ -60,8 +67,16 @@ export default class MarkdownSync {
       (isCtrl && !isShift && event.key.toLowerCase() === "y")
     ) {
       event.preventDefault();
+      this.#pendingRelativeSelection = this.captureRelativeSelection(
+        this.#text
+      );
       this.#undoManager.redo();
     }
+  };
+
+  #onTextareaSelectionChange = () => {
+    this.#pendingRelativeSelection = null;
+    this.onSelectionChange?.();
   };
 
   #onTextareaMouseUp = () => {
@@ -76,11 +91,14 @@ export default class MarkdownSync {
         this.#isSelecting = false;
         this.#skippedUpdatesDuringSelection = false;
         this.onSelectionEnd?.(textareaSelection);
+        this.#onTextareaSelectionChange();
       });
-    } else {
-      this.#isSelecting = false;
-      this.#skippedUpdatesDuringSelection = false;
+      return;
     }
+
+    this.#isSelecting = false;
+    this.#skippedUpdatesDuringSelection = false;
+    this.#onTextareaSelectionChange();
   };
 
   constructor(context) {
@@ -94,6 +112,7 @@ export default class MarkdownSync {
 
   attach(doc, text, undoManager) {
     this.#detached = false;
+    this.#text = text;
     this.#undoManager = undoManager;
     this.#attachSelectionListeners();
 
@@ -106,6 +125,7 @@ export default class MarkdownSync {
   detach() {
     this.#detached = true;
     this.onSelectionEnd = null;
+    this.onSelectionChange = null;
     this.#resetSpellcheckSuppression();
     this.#detachSelectionListeners();
 
@@ -115,6 +135,9 @@ export default class MarkdownSync {
     }
 
     this.#undoManager = null;
+    this.#text = null;
+    this.#pendingRelativeSelection = null;
+    this.#skippedSelectionDeltas = [];
   }
 
   // Selection management
@@ -124,7 +147,11 @@ export default class MarkdownSync {
     if (!textarea) {
       return null;
     }
-    return { start: textarea.selectionStart, end: textarea.selectionEnd };
+    return {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+      direction: textarea.selectionDirection,
+    };
   }
 
   captureRelativeSelection(text) {
@@ -150,6 +177,7 @@ export default class MarkdownSync {
         textarea.selectionEnd,
         0
       ),
+      direction: textarea.selectionDirection,
       scrollTop: textarea.scrollTop,
     };
   }
@@ -179,49 +207,61 @@ export default class MarkdownSync {
     return {
       start: startAbs.index,
       end: endAbs.index,
+      direction: rel.direction,
       scrollTop: rel.scrollTop,
     };
+  }
+
+  handleRemoteCursor(cursor, origin, doc, text, delta = []) {
+    if (!this.cursorOverlay || !origin || !doc) {
+      return;
+    }
+
+    let relativePosition =
+      cursor?.direction === "backward"
+        ? cursor.start
+        : cursor?.end || cursor?.start;
+
+    if (!relativePosition && text) {
+      let index = 0;
+      delta.forEach((operation) => {
+        if (operation.retain) {
+          index += operation.retain;
+        }
+        if (operation.insert) {
+          index +=
+            typeof operation.insert === "string" ? operation.insert.length : 1;
+        }
+      });
+      relativePosition = window.Y.createRelativePositionFromTypeIndex(
+        text,
+        index,
+        -1
+      );
+    }
+
+    if (relativePosition) {
+      this.cursorOverlay.updateCursor(
+        origin.client_id,
+        origin,
+        relativePosition,
+        doc
+      );
+    }
   }
 
   // Remote text change handling
 
   handleTextChange(event, transaction, text, doc, suppressComposerChangeFn) {
     // Handle remote cursor updates
-    if (
-      transaction.origin &&
-      transaction.origin.type === "remote" &&
-      this.cursorOverlay
-    ) {
-      const origin = transaction.origin;
-      let relativePosition = origin.cursor?.end || origin.cursor?.start;
-
-      if (!relativePosition) {
-        let index = 0;
-        (event.delta || []).forEach((op) => {
-          if (op.retain) {
-            index += op.retain;
-          }
-          if (op.insert) {
-            const length = typeof op.insert === "string" ? op.insert.length : 1;
-            index += length;
-          }
-        });
-
-        relativePosition = window.Y.createRelativePositionFromTypeIndex(
-          text,
-          index,
-          -1
-        );
-      }
-
-      if (relativePosition) {
-        this.cursorOverlay.updateCursor(
-          origin.client_id,
-          origin,
-          relativePosition,
-          doc
-        );
-      }
+    if (transaction.origin?.type === "remote") {
+      this.handleRemoteCursor(
+        transaction.origin.cursor,
+        transaction.origin,
+        doc,
+        text,
+        event.delta || []
+      );
     }
 
     this.cursorOverlay?.refresh();
@@ -234,6 +274,9 @@ export default class MarkdownSync {
     // Skip if user is selecting - will sync after selection ends
     if (this.#isSelecting) {
       this.#skippedUpdatesDuringSelection = true;
+      if (event.delta?.length) {
+        this.#skippedSelectionDeltas.push(event.delta);
+      }
       return;
     }
 
@@ -243,6 +286,7 @@ export default class MarkdownSync {
         ? {
             start: textarea.selectionStart,
             end: textarea.selectionEnd,
+            direction: textarea.selectionDirection,
           }
         : null;
 
@@ -315,8 +359,11 @@ export default class MarkdownSync {
       this.cursorOverlay?.refresh();
 
       if (adjustedSelection) {
-        textarea.selectionStart = adjustedSelection.start;
-        textarea.selectionEnd = adjustedSelection.end;
+        textarea.setSelectionRange(
+          adjustedSelection.start,
+          adjustedSelection.end,
+          adjustedSelection.direction || "none"
+        );
       }
 
       if (scrollTop !== undefined && textarea.scrollTop !== scrollTop) {
@@ -367,11 +414,17 @@ export default class MarkdownSync {
     let adjustedSelection = null;
 
     if (oldSelection && oldText !== newText) {
-      adjustedSelection = this.#transformSelectionThroughDiff(
-        oldText,
-        newText,
+      adjustedSelection = this.#skippedSelectionDeltas.reduce(
+        (selection, delta) => transformSelection(selection, delta),
         oldSelection
       );
+      if (this.#skippedSelectionDeltas.length === 0) {
+        adjustedSelection = this.#transformSelectionThroughDiff(
+          oldText,
+          newText,
+          oldSelection
+        );
+      }
     } else if (oldSelection) {
       adjustedSelection = oldSelection;
     }
@@ -386,13 +439,10 @@ export default class MarkdownSync {
 
     if (adjustedSelection) {
       const maxPos = newText.length;
-      textarea.selectionStart = Math.min(
-        Math.max(0, adjustedSelection.start),
-        maxPos
-      );
-      textarea.selectionEnd = Math.min(
-        Math.max(0, adjustedSelection.end),
-        maxPos
+      textarea.setSelectionRange(
+        Math.min(Math.max(0, adjustedSelection.start), maxPos),
+        Math.min(Math.max(0, adjustedSelection.end), maxPos),
+        adjustedSelection.direction || "none"
       );
     }
 
@@ -401,6 +451,7 @@ export default class MarkdownSync {
         textarea.scrollTop = scrollTop;
       });
     }
+    this.#skippedSelectionDeltas = [];
   }
 
   #transformSelectionThroughDiff(oldText, newText, selection) {
@@ -436,6 +487,7 @@ export default class MarkdownSync {
     return {
       start: transformPos(selection.start),
       end: transformPos(selection.end),
+      direction: selection.direction,
     };
   }
 
@@ -462,6 +514,10 @@ export default class MarkdownSync {
       cursor.end = end;
     }
 
+    if (selection.direction && selection.direction !== "none") {
+      cursor.direction = selection.direction;
+    }
+
     return Object.keys(cursor).length ? cursor : null;
   }
 
@@ -484,6 +540,10 @@ export default class MarkdownSync {
       if (end) {
         cursor.end = end;
       }
+    }
+
+    if (cursorPayload.direction) {
+      cursor.direction = cursorPayload.direction;
     }
 
     return Object.keys(cursor).length ? cursor : null;
@@ -550,6 +610,8 @@ export default class MarkdownSync {
 
     textarea.addEventListener("mousedown", this.#onTextareaMouseDown);
     textarea.addEventListener("keydown", this.#onTextareaKeydown);
+    textarea.addEventListener("keyup", this.#onTextareaSelectionChange);
+    textarea.addEventListener("select", this.#onTextareaSelectionChange);
     document.addEventListener("mouseup", this.#onTextareaMouseUp);
     this.#selectionListenersAttached = true;
   }
@@ -563,6 +625,8 @@ export default class MarkdownSync {
     if (textarea) {
       textarea.removeEventListener("mousedown", this.#onTextareaMouseDown);
       textarea.removeEventListener("keydown", this.#onTextareaKeydown);
+      textarea.removeEventListener("keyup", this.#onTextareaSelectionChange);
+      textarea.removeEventListener("select", this.#onTextareaSelectionChange);
     }
     document.removeEventListener("mouseup", this.#onTextareaMouseUp);
     this.#selectionListenersAttached = false;

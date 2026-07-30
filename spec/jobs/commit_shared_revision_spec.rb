@@ -25,6 +25,7 @@ RSpec.describe Jobs::CommitSharedRevision do
       user_id: user.id,
       client_id: "test-client",
       update: update,
+      document_version: SharedEditRevision.current_document_version(post.id),
     )
 
     expect { described_class.new.execute(post_id: post.id) }.to change { post.reload.raw }.to(

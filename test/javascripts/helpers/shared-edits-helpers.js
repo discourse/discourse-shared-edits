@@ -84,9 +84,10 @@ export async function simulateRemoteEdit(postId, updateBase64, options = {}) {
 }
 
 // Simulate a resync action via message bus
-export async function simulateResync(postId) {
+export async function simulateResync(postId, { replace = false } = {}) {
   await publishToMessageBus(`/shared_edits/${postId}`, {
     action: "resync",
+    replace,
   });
 }
 
@@ -143,6 +144,7 @@ export function setupSharedEditsPretender(server, helper, options = {}) {
       state: options.initialState || "",
       raw: options.initialRaw || "initial post content",
       version: options.initialVersion || 1,
+      document_version: options.documentVersion || 1,
       message_bus_last_id: options.messageBusLastId || 0,
     })
   );
@@ -167,10 +169,6 @@ export function setupSharedEditsPretender(server, helper, options = {}) {
     commitCalls.push(Date.now());
     return helper.response({ success: "OK" });
   });
-
-  server.put("/shared_edits/p/:id/selection", () =>
-    helper.response({ success: "OK" })
-  );
 
   return { requestBodies, commitCalls };
 }

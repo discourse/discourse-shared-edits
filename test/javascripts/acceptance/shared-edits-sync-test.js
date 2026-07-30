@@ -1,10 +1,11 @@
-import { fillIn, waitUntil } from "@ember/test-helpers";
+import { click, fillIn, waitUntil } from "@ember/test-helpers";
 import { test } from "qunit";
 import { parsePostData } from "discourse/tests/helpers/create-pretender";
 import {
   acceptance,
   publishToMessageBus,
 } from "discourse/tests/helpers/qunit-helpers";
+import { i18n } from "discourse-i18n";
 import {
   getTextarea,
   openSharedEditComposer,
@@ -40,6 +41,7 @@ acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
         state: "",
         raw: "initial content",
         version: 1,
+        document_version: 1,
         message_bus_last_id: 0,
       })
     );
@@ -52,10 +54,6 @@ acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
     });
 
     server.put("/shared_edits/p/:id/commit.json", () =>
-      helper.response({ success: "OK" })
-    );
-
-    server.put("/shared_edits/p/:id/selection", () =>
       helper.response({ success: "OK" })
     );
   });
@@ -144,6 +142,51 @@ acceptance("Discourse Shared Edits | Text Synchronization", function (needs) {
       manager.text.toString(),
       "change 3",
       "Final Y.Text state is correct"
+    );
+  });
+
+  test("ignores a replacement event already included in the fetched state", async function (assert) {
+    await openSharedEditComposer();
+    const manager = await waitForSharedEditManager(this.container);
+    await waitForYjs();
+    await fillIn(TEXTAREA_SELECTOR, "current local text");
+
+    await publishToMessageBus("/shared_edits/398", {
+      action: "resync",
+      replace: true,
+      version: 1,
+      document_version: 1,
+    });
+
+    assert.strictEqual(
+      manager.text.toString(),
+      "current local text",
+      "an already-loaded replacement does not disrupt the editor"
+    );
+  });
+
+  test("replacement resync does not restore text from the replaced document", async function (assert) {
+    await openSharedEditComposer();
+    const manager = await waitForSharedEditManager(this.container);
+    await waitForYjs();
+    await fillIn(TEXTAREA_SELECTOR, "text from the replaced document");
+
+    await publishToMessageBus("/shared_edits/398", {
+      action: "resync",
+      replace: true,
+      version: 2,
+      document_version: 2,
+    });
+    await waitUntil(() => manager.text?.toString() === "initial content");
+
+    assert
+      .dom(".dialog-body")
+      .hasText(i18n("shared_edits.errors.document_replaced"));
+    await click(".dialog-footer .btn-primary");
+    assert.strictEqual(
+      getTextarea().value,
+      "initial content",
+      "the replacement state remains authoritative"
     );
   });
 

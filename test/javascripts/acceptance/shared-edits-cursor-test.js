@@ -64,9 +64,6 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
       updateRequestBodies.push(body);
       return helper.response({ success: "OK" });
     });
-    server.put("/shared_edits/p/:id/selection", () =>
-      helper.response({ success: "OK" })
-    );
     server.put("/shared_edits/p/:id/commit.json", () =>
       helper.response({ success: "OK" })
     );
@@ -172,6 +169,34 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
     );
   });
 
+  test("sends cursor metadata when the selection moves without an edit", async function (assert) {
+    updateRequestBodies.length = 0;
+
+    await openSharedEditComposer();
+    await waitUntil(() => window.Y);
+    updateRequestBodies.length = 0;
+
+    const textarea = document.querySelector(TEXTAREA_SELECTOR);
+    textarea.focus();
+    textarea.setSelectionRange(4, 4);
+    textarea.dispatchEvent(
+      new KeyboardEvent("keyup", { bubbles: true, key: "ArrowLeft" })
+    );
+
+    await waitUntil(
+      () =>
+        updateRequestBodies.some(
+          (payload) => payload.cursor && !payload.update
+        ),
+      { timeout: 1500 }
+    );
+
+    const payload = updateRequestBodies.find(
+      (requestBody) => requestBody.cursor && !requestBody.update
+    );
+    assert.true(Boolean(payload), "a cursor-only update is sent");
+  });
+
   test("applies cursor metadata from remote updates", async function (assert) {
     updateRequestBodies.length = 0;
 
@@ -203,9 +228,17 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
       0,
       0
     );
+    const cursorEndRelative = window.Y.createRelativePositionFromTypeIndex(
+      clonedText,
+      5,
+      0
+    );
 
     const cursorBase64 = uint8ArrayToBase64(
       window.Y.encodeRelativePosition(cursorRelative)
+    );
+    const cursorEndBase64 = uint8ArrayToBase64(
+      window.Y.encodeRelativePosition(cursorEndRelative)
     );
     const updateBase64 = uint8ArrayToBase64(updateDelta);
 
@@ -214,7 +247,11 @@ acceptance(`Discourse Shared Edits | Cursors & Selection`, function (needs) {
       user_id: 456,
       username: "cursor-metadata",
       update: updateBase64,
-      cursor: { start: cursorBase64 },
+      cursor: {
+        start: cursorBase64,
+        end: cursorEndBase64,
+        direction: "backward",
+      },
     });
 
     await waitUntil(() => {

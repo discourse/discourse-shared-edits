@@ -206,12 +206,23 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
       expect(described_class.should_snapshot?(state)).to eq(false)
     end
 
-    it "returns true for state above threshold" do
-      # Create a state larger than 100KB by creating large text
-      # The Yjs state will be even larger than the text due to CRDT metadata
+    it "returns false when a large state is mostly document text" do
       large_text = "x" * 120_000
       state = DiscourseSharedEdits::Yjs.state_from_text(large_text)[:state]
-      expect(described_class.should_snapshot?(state)).to eq(true)
+
+      expect(described_class.should_snapshot?(state)).to eq(false)
+    end
+
+    it "returns true when CRDT history is bloated relative to the text" do
+      stub_const(described_class, "SNAPSHOT_THRESHOLD_BYTES", 100) do
+        state = DiscourseSharedEdits::Yjs.state_from_text("initial text")[:state]
+        10.times do |index|
+          update = DiscourseSharedEdits::Yjs.update_from_state(state, "version #{index}")
+          state = DiscourseSharedEdits::Yjs.apply_update(state, update)[:state]
+        end
+
+        expect(described_class.should_snapshot?(state)).to eq(true)
+      end
     end
 
     it "returns false for invalid base64" do
@@ -408,6 +419,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
         user_id: user.id,
         client_id: "test",
         update: update,
+        document_version: SharedEditRevision.current_document_version(post.id),
       )
 
       initial_count = SharedEditRevision.where(post_id: post.id).count
@@ -566,6 +578,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
         user_id: user.id,
         client_id: "client-#{user.id}",
         update: update,
+        document_version: SharedEditRevision.current_document_version(post.id),
       )
     end
 
@@ -693,6 +706,7 @@ RSpec.describe DiscourseSharedEdits::StateValidator do
         user_id: user.id,
         client_id: "test",
         update: update,
+        document_version: SharedEditRevision.current_document_version(post.id),
       )
 
       initial_count = SharedEditRevision.where(post_id: post.id).count

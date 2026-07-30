@@ -32,9 +32,9 @@ module DiscourseSharedEdits
           username: current_user.username,
           allow_blank_state: context[:allow_blank_state] || false,
           state_vector: context[:state_vector],
+          document_version: context[:document_version],
         )
 
-      SharedEditRevision.ensure_will_commit(post.id)
       context[:version] = version
       context[:update] = update_payload
       context[:state_hash] = state_hash

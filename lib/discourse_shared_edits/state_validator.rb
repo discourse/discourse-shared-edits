@@ -8,6 +8,8 @@ module DiscourseSharedEdits
     MAX_UPDATE_BYTES = 1.megabyte
     MAX_STATE_VECTOR_BYTES = 64.kilobytes
     MAX_CLIENT_ID_LENGTH = 255
+    MAX_CURSOR_POSITION_BYTES = 2.kilobytes
+    CURSOR_DIRECTIONS = %w[forward backward none].freeze
 
     class StateCorruptionError < StandardError
       attr_reader :post_id, :version, :recovery_attempted
@@ -46,6 +48,15 @@ module DiscourseSharedEdits
         @current_length = current_length
         @max_length = max_length
         super(message)
+      end
+    end
+
+    class DocumentReplacedError < StandardError
+      attr_reader :document_version
+
+      def initialize(document_version:)
+        @document_version = document_version
+        super("Collaborative document was replaced")
       end
     end
 
@@ -110,8 +121,11 @@ module DiscourseSharedEdits
         return false if state_b64.blank?
 
         state_bytes = Base64.strict_decode64(state_b64).bytesize
-        state_bytes > SNAPSHOT_THRESHOLD_BYTES
-      rescue ArgumentError
+        return false if state_bytes <= SNAPSHOT_THRESHOLD_BYTES
+
+        text_bytes = DiscourseSharedEdits::Yjs.text_from_state(state_b64).to_s.bytesize
+        state_bytes > [SNAPSHOT_THRESHOLD_BYTES, text_bytes * 2].max
+      rescue ArgumentError, MiniRacer::RuntimeError, MiniRacer::ParseError
         false
       end
 
@@ -129,6 +143,29 @@ module DiscourseSharedEdits
         rescue ArgumentError => e
           { valid: false, error: "Invalid base64: #{e.message}" }
         end
+      end
+
+      def validate_cursor(cursor)
+        return { valid: false, error: "Cursor must be an object" } if !cursor.is_a?(Hash)
+        if cursor["start"].blank? && cursor["end"].blank?
+          return { valid: false, error: "Cursor position is missing" }
+        end
+
+        %w[start end].each do |key|
+          value = cursor[key]
+          next if value.nil?
+          return { valid: false, error: "Cursor #{key} must be a string" } if !value.is_a?(String)
+          if value.bytesize > MAX_CURSOR_POSITION_BYTES
+            return { valid: false, error: "Cursor #{key} is too large" }
+          end
+        end
+
+        direction = cursor["direction"]
+        if direction.present? && !CURSOR_DIRECTIONS.include?(direction)
+          return { valid: false, error: "Cursor direction is invalid" }
+        end
+
+        { valid: true, error: nil }
       end
 
       def validate_state_vector(state_vector_b64)
@@ -267,6 +304,7 @@ module DiscourseSharedEdits
 
         SharedEditRevision.with_commit_lock(post_id) do
           SharedEditRevision.transaction do
+            Post.where(id: post_id).lock.pick(:id)
             next_version = (SharedEditRevision.where(post_id: post_id).maximum(:version) || 0) + 1
 
             initial_state = DiscourseSharedEdits::Yjs.state_from_text(post.raw)
@@ -279,6 +317,7 @@ module DiscourseSharedEdits
                 version: next_version,
                 revision: "",
                 raw: initial_state[:state],
+                document_id: SecureRandom.uuid,
                 post_revision_id: SharedEditRevision.last_revision_id_for_post(post),
               )
 
@@ -325,6 +364,7 @@ module DiscourseSharedEdits
 
         SharedEditRevision.with_commit_lock(post_id) do
           SharedEditRevision.transaction do
+            Post.where(id: post_id).lock.pick(:id)
             next_version = (SharedEditRevision.where(post_id: post_id).maximum(:version) || 0) + 1
 
             initial_state = DiscourseSharedEdits::Yjs.state_from_text(text)
@@ -337,6 +377,7 @@ module DiscourseSharedEdits
                 version: next_version,
                 revision: "",
                 raw: initial_state[:state],
+                document_id: SecureRandom.uuid,
                 post_revision_id: nil,
               )
 
