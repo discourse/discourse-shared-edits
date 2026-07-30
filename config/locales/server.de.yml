@@ -24,3 +24,4 @@ de:
     shared_edits_enabled: Ermögliche die gemeinsame Bearbeitung von bestimmten Beiträgen.
     shared_edits_editor_mode: "Editor-Modus für gemeinsame Bearbeitungen: „markdown“ verwendet einfachen Text, „rich“ verwendet den ProseMirror Rich-Text-Editor."
     shared_edits_commit_delay_seconds: "Wartezeit in Sekunden, bevor gemeinsame Bearbeitungen an den Beitrag übertragen werden. Niedrigere Werte führen zu häufigeren Übertragungen, können aber die Serverlast erhöhen."
+    shared_edits_toggle_allowed_groups: "Gruppen, denen es gestattet ist, gemeinsame Bearbeitungen an Beiträgen zu aktivieren oder zu deaktivieren."
