@@ -10,6 +10,13 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
   fab!(:private_category) { Fabricate(:private_category, group: group) }
   fab!(:private_post) { Fabricate(:post, topic: Fabricate(:topic, category: private_category)) }
 
+  def put_revision(post, params:)
+    put "/shared_edits/p/#{post.id}",
+        params: { document_version: SharedEditRevision.current_document_version(post.id) }.merge(
+          params,
+        )
+  end
+
   describe "#enable" do
     context "when admin" do
       before { sign_in admin }
@@ -115,6 +122,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           user_id: user.id,
           client_id: "test",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post1.id),
         )
 
         revision_count = SharedEditRevision.where(post_id: post1.id).count
@@ -175,11 +183,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       new_text = "1234" + post1.raw[4..]
       latest_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                   }
 
       get "/shared_edits/p/#{post1.id}"
       expect(response.status).to eq(200)
@@ -191,6 +199,23 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       expect(raw[0..3]).to eq("1234")
       expect(version).to eq(2)
       expect(state).to be_present
+    end
+
+    it "reports corrupted state without changing revision history" do
+      revision = SharedEditRevision.where(post_id: post1.id).order(version: :desc).first
+      corrupted_state = Base64.strict_encode64("corrupted state")
+      revision.update_column(:raw, corrupted_state)
+
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post1.id}") { get "/shared_edits/p/#{post1.id}" }
+
+      expect(response.status).to eq(409)
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::NEEDS_RECOVERY_TEXT,
+      )
+      expect(revision.reload.raw).to eq(corrupted_state)
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(1)
+      expect(messages).to be_empty
     end
 
     it "returns 404 when no revisions exist" do
@@ -220,11 +245,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       new_text = "Updated content here"
       latest_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                   }
 
       get "/shared_edits/p/#{post1.id}"
       new_last_id = response.parsed_body["message_bus_last_id"]
@@ -241,11 +266,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
       messages =
         MessageBus.track_publish("/shared_edits/#{post1.id}") do
-          put "/shared_edits/p/#{post1.id}",
-              params: {
-                client_id: "other_client",
-                update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-              }
+          put_revision post1,
+                       params: {
+                         client_id: "other_client",
+                         update:
+                           DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                       }
         end
 
       expect(messages.length).to eq(1)
@@ -271,6 +297,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         user_id: user.id,
         client_id: "test",
         update: update,
+        document_version: SharedEditRevision.current_document_version(post1.id),
       )
 
       put "/shared_edits/p/#{post1.id}/commit"
@@ -302,6 +329,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         user_id: user.id,
         client_id: "test",
         update: update,
+        document_version: SharedEditRevision.current_document_version(post1.id),
       )
 
       post1.topic.update!(closed: true)
@@ -331,11 +359,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       new_text = "1234" + post1.raw[4..]
       latest_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                   }
       expect(response.status).to eq(200)
 
       SharedEditRevision.commit!(post1.id)
@@ -348,11 +376,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       new_text = "1234" + post1.raw[4..]
       latest_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                   }
       expect(response.status).to eq(200)
       state_hash = response.parsed_body["state_hash"]
       latest_revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
@@ -364,11 +392,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
       latest_state = latest_state_for(post1)
       new_text = "5678" + post1.raw[4..]
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                   }
       expect(response.status).to eq(200)
       state_hash = response.parsed_body["state_hash"]
       latest_revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
@@ -380,7 +408,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       latest_state = latest_state_for(post1)
       blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
 
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: blank_update }
+      put_revision post1, params: { client_id: "abc", update: blank_update }
 
       expect(response.status).to eq(422)
       expect(response.parsed_body["error"]).to eq(
@@ -392,12 +420,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       latest_state = latest_state_for(post1)
       blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: blank_update,
-            allow_blank_state: true,
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: blank_update,
+                     allow_blank_state: true,
+                   }
 
       expect(response.status).to eq(200)
       expect(response.parsed_body["version"]).to eq(2)
@@ -418,12 +446,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           .first
       blank_update = DiscourseSharedEdits::Yjs.update_from_state(latest_state, "")
 
-      put "/shared_edits/p/#{author_post.id}",
-          params: {
-            client_id: "abc",
-            update: blank_update,
-            allow_blank_state: true,
-          }
+      put_revision author_post,
+                   params: {
+                     client_id: "abc",
+                     update: blank_update,
+                     allow_blank_state: true,
+                   }
 
       expect(response.status).to eq(422)
       expect(response.parsed_body["error"]).to eq(
@@ -432,7 +460,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
     end
 
     it "requires client_id parameter" do
-      put "/shared_edits/p/#{post1.id}", params: { update: "test" }
+      put_revision post1, params: { update: "test" }
       expect(response.status).to eq(400)
     end
 
@@ -440,11 +468,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       latest_state = latest_state_for(post1)
       oversized_client_id = "a" * 256
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: oversized_client_id,
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Updated content"),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: oversized_client_id,
+                     update:
+                       DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Updated content"),
+                   }
 
       expect(response.status).to eq(400)
       expect(response.parsed_body["error"]).to eq(
@@ -455,11 +484,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
     it "rejects oversized client_id for awareness-only updates" do
       oversized_client_id = "a" * 256
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: oversized_client_id,
-            awareness: Base64.strict_encode64("awareness_data"),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: oversized_client_id,
+                     awareness: Base64.strict_encode64("awareness_data"),
+                   }
 
       expect(response.status).to eq(400)
       expect(response.parsed_body["error"]).to eq(
@@ -467,19 +496,157 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       )
     end
 
-    it "requires update or awareness parameter" do
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc" }
+    it "accepts a legacy client while repairing a missing server document version" do
+      SharedEditRevision.where(post_id: post1.id).update_all(document_id: nil)
+      update = DiscourseSharedEdits::Yjs.update_from_state(latest_state_for(post1), "legacy edit")
+
+      put_revision post1, params: { client_id: "legacy-client", update: update }
+
+      expect(response.status).to eq(200)
+      expect(SharedEditRevision.current_document_version(post1.id)).to be_present
+    end
+
+    it "accepts an unversioned tab for a backfilled legacy document" do
+      SharedEditRevision.where(post_id: post1.id).update_all(
+        document_id: SharedEditRevision.legacy_document_id(post1.id),
+      )
+      update =
+        DiscourseSharedEdits::Yjs.update_from_state(latest_state_for(post1), "legacy tab edit")
+
+      put_revision post1, params: { client_id: "legacy-tab", document_version: nil, update: update }
+
+      expect(response.status).to eq(200)
+    end
+
+    it "rejects updates without a document version" do
+      update =
+        DiscourseSharedEdits::Yjs.update_from_state(latest_state_for(post1), "unversioned edit")
+      revision_count = SharedEditRevision.where(post_id: post1.id).count
+
+      put_revision post1,
+                   params: {
+                     client_id: "unversioned-client",
+                     document_version: nil,
+                     update: update,
+                   }
+
+      expect(response.status).to eq(409)
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::STATE_RECOVERED,
+      )
+      expect(response.parsed_body["document_version"]).to eq(
+        SharedEditRevision.current_document_version(post1.id),
+      )
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(revision_count)
+    end
+
+    it "rejects updates from a replaced document version" do
+      stale_state = latest_state_for(post1)
+      stale_document_version = SharedEditRevision.current_document_version(post1.id)
+      recovery = DiscourseSharedEdits::StateValidator.recover_from_post_raw(post1.id, force: true)
+      update = DiscourseSharedEdits::Yjs.update_from_state(stale_state, "stale client edit")
+      revision_count = SharedEditRevision.where(post_id: post1.id).count
+
+      put_revision post1,
+                   params: {
+                     client_id: "stale-client",
+                     document_version: stale_document_version,
+                     update: update,
+                   }
+
+      expect(recovery[:success]).to eq(true)
+      expect(response.status).to eq(409)
+      expect(response.parsed_body["error"]).to eq(
+        DiscourseSharedEdits::Protocol::Errors::STATE_RECOVERED,
+      )
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(revision_count)
+    end
+
+    it "requires an update, awareness, or cursor parameter" do
+      put_revision post1, params: { client_id: "abc" }
       expect(response.status).to eq(400)
+    end
+
+    it "rejects oversized cursor positions" do
+      put_revision post1,
+                   params: {
+                     client_id: "cursor-client",
+                     cursor: {
+                       start:
+                         "x" *
+                           (DiscourseSharedEdits::StateValidator::MAX_CURSOR_POSITION_BYTES + 1),
+                     },
+                   }
+
+      expect(response.status).to eq(400)
+    end
+
+    it "rejects invalid cursor direction" do
+      put_revision post1,
+                   params: {
+                     client_id: "cursor-client",
+                     cursor: {
+                       start: "encoded-start",
+                       direction: "sideways",
+                     },
+                   }
+
+      expect(response.status).to eq(400)
+    end
+
+    it "refreshes an active session without creating a revision" do
+      initial_count = SharedEditRevision.where(post_id: post1.id).count
+      SharedEditRevision.clear_commit_schedule(post1.id)
+      Discourse.redis.del(SharedEditRevision.active_session_key(post1.id))
+
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post1.id}") do
+          put_revision post1, params: { client_id: "heartbeat-client", heartbeat: true }
+        end
+
+      expect(response.status).to eq(200)
+      expect(Discourse.redis.exists?(SharedEditRevision.active_session_key(post1.id))).to eq(true)
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
+      expect(messages).to be_empty
+    end
+
+    it "accepts cursor-only updates without creating a revision" do
+      initial_count = SharedEditRevision.where(post_id: post1.id).count
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post1.id}") do
+          put_revision post1,
+                       params: {
+                         client_id: "cursor-client",
+                         cursor: {
+                           start: "encoded-start",
+                           end: "encoded-end",
+                           direction: "backward",
+                         },
+                       }
+        end
+
+      expect(response.status).to eq(200)
+      expect(messages.map(&:data)).to contain_exactly(
+        include(
+          client_id: "cursor-client",
+          cursor: {
+            "start" => "encoded-start",
+            "end" => "encoded-end",
+            "direction" => "backward",
+          },
+        ),
+      )
+      expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
     end
 
     it "accepts awareness-only updates without document update" do
       messages =
         MessageBus.track_publish("/shared_edits/#{post1.id}") do
-          put "/shared_edits/p/#{post1.id}",
-              params: {
-                client_id: "abc",
-                awareness: Base64.strict_encode64("awareness_data"),
-              }
+          put_revision post1,
+                       params: {
+                         client_id: "abc",
+                         awareness: Base64.strict_encode64("awareness_data"),
+                       }
         end
 
       expect(response.status).to eq(200)
@@ -491,18 +658,18 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
     it "does not create revision for awareness-only updates" do
       initial_count = SharedEditRevision.where(post_id: post1.id).count
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            awareness: Base64.strict_encode64("awareness_data"),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     awareness: Base64.strict_encode64("awareness_data"),
+                   }
 
       expect(response.status).to eq(200)
       expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
     end
 
     it "rejects invalid awareness payloads" do
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", awareness: "not-base64" }
+      put_revision post1, params: { client_id: "abc", awareness: "not-base64" }
 
       expect(response.status).to eq(400)
     end
@@ -514,11 +681,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       latest_state = latest_state_for(post1)
 
       Sidekiq::Testing.inline! do
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                     }
 
         get "/shared_edits/p/#{post1.id}"
         expect(response.status).to eq(200)
@@ -536,19 +703,19 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       second_text = "wxyz" + post1.raw[4..]
       latest_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, first_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, first_text),
+                   }
 
       latest_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "123",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, second_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "123",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, second_text),
+                   }
 
       expect(response.status).to eq(200)
 
@@ -566,7 +733,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       # Use a valid base64 update that will pass input validation but fail
       # when Yjs tries to apply it to the corrupted state
       valid_update = Base64.strict_encode64("some binary data")
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: valid_update }
+      put_revision post1, params: { client_id: "abc", update: valid_update }
 
       # Server now asks for recovery text instead of auto-recovering
       expect(response.status).to eq(409)
@@ -582,12 +749,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
         new_text = "Updated content"
 
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-              state_vector: client_sv_b64,
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                       state_vector: client_sv_b64,
+                     }
 
         expect(response.status).to eq(200)
         expect(response.parsed_body["version"]).to eq(2)
@@ -604,15 +771,16 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           user_id: admin.id,
           client_id: "other_client",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post1.id),
         )
 
         new_text = "Client edit based on stale state"
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-              state_vector: client_sv_b64,
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                       state_vector: client_sv_b64,
+                     }
 
         expect(response.status).to eq(409)
         expect(response.parsed_body["error"]).to eq(
@@ -632,11 +800,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         latest_state = latest_state_for(post1)
         new_text = "Updated without state vector"
 
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                     }
 
         expect(response.status).to eq(200)
       end
@@ -649,12 +817,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         client_sv_b64 = Base64.strict_encode64(client_sv.pack("C*"))
 
         new_text = "Edit from client ahead of server"
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-              state_vector: client_sv_b64,
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                       state_vector: client_sv_b64,
+                     }
 
         expect(response.status).to eq(200)
       end
@@ -662,12 +830,13 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       it "rejects invalid state vectors" do
         latest_state = latest_state_for(post1)
 
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Client update"),
-              state_vector: "invalid!!!",
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update:
+                         DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Client update"),
+                       state_vector: "invalid!!!",
+                     }
 
         expect(response.status).to eq(400)
         expect(response.parsed_body["error"]).to eq(
@@ -680,11 +849,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       initial_count = SharedEditRevision.where(post_id: post1.id).count
       initial_state = latest_state_for(post1)
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            recovery_text: "attempted overwrite from healthy state",
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     recovery_text: "attempted overwrite from healthy state",
+                   }
 
       expect(response.status).to eq(409)
       expect(response.parsed_body["error"]).to eq(
@@ -701,7 +870,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
       initial_count = SharedEditRevision.where(post_id: post1.id).count
 
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", recovery_text: "   " }
+      put_revision post1, params: { client_id: "abc", recovery_text: "   " }
 
       expect(response.status).to eq(400)
       expect(SharedEditRevision.where(post_id: post1.id).count).to eq(initial_count)
@@ -713,11 +882,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       revision.update_column(:raw, Base64.strict_encode64("corrupted data"))
 
       # Client sends recovery text
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            recovery_text: "recovered content from client",
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     recovery_text: "recovered content from client",
+                   }
 
       expect(response.status).to eq(200)
       expect(response.parsed_body["error"]).to eq(
@@ -730,7 +899,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       post1.custom_fields.delete(DiscourseSharedEdits::SHARED_EDITS_ENABLED)
       post1.save_custom_fields
 
-      put "/shared_edits/p/#{post1.id}", params: { client_id: "abc", update: "test" }
+      put_revision post1, params: { client_id: "abc", update: "test" }
 
       expect(response.status).to eq(404)
     end
@@ -739,11 +908,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       SharedEditRevision.where(post_id: post1.id).delete_all
 
       latest_state = DiscourseSharedEdits::Yjs.state_from_text("test")[:state]
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "abc",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "new text"),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "abc",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "new text"),
+                   }
 
       expect(response.status).to eq(409)
       expect(response.parsed_body["error"]).to eq(
@@ -758,11 +927,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
       latest_state = latest_state_for(post1)
       new_text = "Collaborative edit from another user"
 
-      put "/shared_edits/p/#{post1.id}",
-          params: {
-            client_id: "other-client",
-            update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-          }
+      put_revision post1,
+                   params: {
+                     client_id: "other-client",
+                     update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                   }
 
       expect(response.status).to eq(403)
     end
@@ -778,11 +947,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         5.times do
           latest_state = latest_state_for(post1)
           new_text = "Edit #{SecureRandom.hex(4)}"
-          put "/shared_edits/p/#{post1.id}",
-              params: {
-                client_id: "abc",
-                update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-              }
+          put_revision post1,
+                       params: {
+                         client_id: "abc",
+                         update:
+                           DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                       }
           expect(response.status).to eq(200)
         end
       ensure
@@ -796,11 +966,12 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         121.times do |i|
           latest_state = latest_state_for(post1)
           new_text = "Edit #{i}"
-          put "/shared_edits/p/#{post1.id}",
-              params: {
-                client_id: "abc",
-                update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
-              }
+          put_revision post1,
+                       params: {
+                         client_id: "abc",
+                         update:
+                           DiscourseSharedEdits::Yjs.update_from_state(latest_state, new_text),
+                       }
         end
 
         expect(response.status).to eq(429)
@@ -817,20 +988,22 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
         # Make requests to post1
         latest_state = latest_state_for(post1)
-        put "/shared_edits/p/#{post1.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Edit post1"),
-            }
+        put_revision post1,
+                     params: {
+                       client_id: "abc",
+                       update:
+                         DiscourseSharedEdits::Yjs.update_from_state(latest_state, "Edit post1"),
+                     }
         expect(response.status).to eq(200)
 
         # Make requests to post2 - should not be affected by post1's rate limit
         latest_state2 = SharedEditRevision.where(post_id: post2.id).order("version desc").first.raw
-        put "/shared_edits/p/#{post2.id}",
-            params: {
-              client_id: "abc",
-              update: DiscourseSharedEdits::Yjs.update_from_state(latest_state2, "Edit post2"),
-            }
+        put_revision post2,
+                     params: {
+                       client_id: "abc",
+                       update:
+                         DiscourseSharedEdits::Yjs.update_from_state(latest_state2, "Edit post2"),
+                     }
         expect(response.status).to eq(200)
       ensure
         RateLimiter.disable
@@ -840,11 +1013,11 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
         RateLimiter.enable
 
         21.times do
-          put "/shared_edits/p/#{post1.id}",
-              params: {
-                client_id: "abc",
-                recovery_text: "redundant recovery request",
-              }
+          put_revision post1,
+                       params: {
+                         client_id: "abc",
+                         recovery_text: "redundant recovery request",
+                       }
         end
 
         expect(response.status).to eq(429)
@@ -926,6 +1099,10 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
         expect(messages.length).to eq(1)
         expect(messages.first.data[:action]).to eq("resync")
+        expect(messages.first.data[:replace]).to eq(true)
+        expect(messages.first.data[:document_version]).to eq(
+          SharedEditRevision.current_document_version(post1.id),
+        )
       end
 
       it "refuses to recover healthy state without force" do
@@ -961,39 +1138,6 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
     end
   end
 
-  describe "#latest with automatic recovery" do
-    before do
-      sign_in admin
-      SharedEditRevision.toggle_shared_edits!(post1.id, true)
-    end
-
-    it "automatically recovers corrupted state on access" do
-      revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
-      revision.update_column(:raw, Base64.strict_encode64("corrupted"))
-
-      get "/shared_edits/p/#{post1.id}"
-
-      expect(response.status).to eq(200)
-      body = response.parsed_body
-      expect(body["raw"]).to eq(post1.raw)
-      expect(body["version"]).to eq(2)
-    end
-
-    it "does not bypass recovery rate limiting on repeated auto-recoveries" do
-      revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
-      revision.update_column(:raw, Base64.strict_encode64("corrupted once"))
-
-      get "/shared_edits/p/#{post1.id}"
-      expect(response.status).to eq(200)
-
-      revision = SharedEditRevision.where(post_id: post1.id).order("version desc").first
-      revision.update_column(:raw, Base64.strict_encode64("corrupted twice"))
-
-      get "/shared_edits/p/#{post1.id}"
-      expect(response.status).to eq(403)
-    end
-  end
-
   describe "#reset" do
     def latest_state_for(post)
       SharedEditRevision.where(post_id: post.id).order("version desc").limit(1).pluck(:raw).first
@@ -1014,6 +1158,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           user_id: admin.id,
           client_id: "test",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post1.id),
         )
 
         state = latest_state_for(post1)
@@ -1023,6 +1168,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           user_id: admin.id,
           client_id: "test",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post1.id),
         )
 
         expect(SharedEditRevision.where(post_id: post1.id).count).to eq(3)
@@ -1041,6 +1187,10 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
 
         expect(messages.length).to eq(1)
         expect(messages.first.data[:action]).to eq("resync")
+        expect(messages.first.data[:replace]).to eq(true)
+        expect(messages.first.data[:document_version]).to eq(
+          SharedEditRevision.current_document_version(post1.id),
+        )
       end
 
       it "commits pending changes before reset" do
@@ -1052,6 +1202,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           user_id: admin.id,
           client_id: "test",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post1.id),
         )
 
         post "/shared_edits/p/#{post1.id}/reset"
@@ -1069,6 +1220,7 @@ RSpec.describe DiscourseSharedEdits::RevisionController do
           user_id: admin.id,
           client_id: "test",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post1.id),
         )
 
         revision_count = SharedEditRevision.where(post_id: post1.id).count

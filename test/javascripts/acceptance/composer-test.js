@@ -39,10 +39,6 @@ acceptance(`Discourse Shared Edits | Composer`, function (needs) {
       commitCalls.push(Date.now());
       return helper.response({ success: "OK" });
     });
-
-    server.put("/shared_edits/p/:id/selection", () =>
-      helper.response({ success: "OK" })
-    );
   });
 
   async function openSharedEdit() {

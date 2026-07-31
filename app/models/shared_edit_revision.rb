@@ -11,6 +11,8 @@ class SharedEditRevision < ActiveRecord::Base
   MAX_AWARENESS_BYTES = 10.kilobytes
   MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits"
   DEFAULT_COMMIT_DELAY_SECONDS = 30
+  ACTIVE_SESSION_TTL_SECONDS = 120
+  FORCED_SNAPSHOT_THRESHOLD_BYTES = 10.megabytes
 
   def self.commit_delay_seconds
     SiteSetting.shared_edits_commit_delay_seconds
@@ -23,18 +25,74 @@ class SharedEditRevision < ActiveRecord::Base
   end
 
   def self.ensure_will_commit(post_id)
-    with_commit_lock(post_id) do
-      key = will_commit_key(post_id)
-      next if Discourse.redis.get(key)
-
-      delay = commit_delay_seconds.seconds
-      Jobs.enqueue_in(delay, :commit_shared_revision, post_id: post_id)
-      Discourse.redis.setex(key, commit_lock_validity_seconds, "1")
-    end
+    with_commit_lock(post_id) { schedule_commit(post_id) }
   end
+
+  def self.schedule_commit(post_id, delay_seconds: commit_delay_seconds)
+    key = will_commit_key(post_id)
+    return if Discourse.redis.get(key)
+
+    Jobs.enqueue_in(delay_seconds.seconds, :commit_shared_revision, post_id: post_id)
+    key_ttl = [delay_seconds * 2, commit_lock_validity_seconds].max
+    Discourse.redis.setex(key, key_ttl, "1")
+  end
+  private_class_method :schedule_commit
 
   def self.message_bus_channel(post_id)
     "#{MESSAGE_BUS_CHANNEL_PREFIX}/#{post_id}"
+  end
+
+  def self.active_session_key(post_id)
+    "shared_revision_active_session_#{post_id}"
+  end
+
+  def self.mark_session_active!(post_id)
+    Discourse.redis.setex(active_session_key(post_id), ACTIVE_SESSION_TTL_SECONDS, "1")
+  end
+
+  def self.session_active?(post_id)
+    Discourse.redis.exists?(active_session_key(post_id))
+  end
+  private_class_method :session_active?
+
+  def self.legacy_document_id(post_id)
+    hex = Digest::MD5.hexdigest("shared-edits:#{post_id}")
+    [hex[0, 8], hex[8, 4], hex[12, 4], hex[16, 4], hex[20, 12]].join("-")
+  end
+
+  def self.current_document_version(post_id)
+    SharedEditRevision.where(post_id: post_id).order(version: :desc).pick(:document_id)
+  end
+
+  def self.ensure_document_id!(post_id, latest)
+    return latest.document_id if latest.document_id.present?
+
+    document_id =
+      SharedEditRevision
+        .where(post_id: post_id)
+        .where.not(document_id: nil)
+        .order(version: :desc)
+        .pick(:document_id) || legacy_document_id(post_id)
+    SharedEditRevision.where(post_id: post_id, document_id: nil).update_all(
+      document_id: document_id,
+    )
+    latest.document_id = document_id
+  end
+  private_class_method :ensure_document_id!
+
+  def self.ensure_document_version!(post_id)
+    transaction do
+      Post.where(id: post_id).lock.pick(:id)
+      latest = where(post_id: post_id).order(version: :desc).first
+      if !latest
+        raise DiscourseSharedEdits::StateValidator::SharedEditsNotInitializedError.new(
+                "shared edits not initialized",
+                post_id: post_id,
+              )
+      end
+
+      ensure_document_id!(post_id, latest)
+    end
   end
 
   def self.last_revision_id_for_post(post)
@@ -91,6 +149,7 @@ class SharedEditRevision < ActiveRecord::Base
       version: 1,
       revision: "",
       raw: initial_state[:state],
+      document_id: SecureRandom.uuid,
       post_revision_id: revision_id,
     )
   end
@@ -250,6 +309,7 @@ class SharedEditRevision < ActiveRecord::Base
 
     with_commit_lock(post_id) do
       SharedEditRevision.transaction do
+        Post.where(id: post_id).lock.pick(:id)
         result = commit!(post_id)
         if result.nil?
           latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
@@ -290,8 +350,7 @@ class SharedEditRevision < ActiveRecord::Base
   MAX_REVISION_RETRIES = 3
 
   def self.compact_history!(post_id)
-    latest = SharedEditRevision.where(post_id: post_id).order("version desc").limit(1).first
-
+    latest = SharedEditRevision.where(post_id: post_id).order(version: :desc).first
     return if latest.nil?
 
     validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
@@ -302,46 +361,54 @@ class SharedEditRevision < ActiveRecord::Base
       return
     end
 
+    if DiscourseSharedEdits::StateValidator.should_snapshot?(latest.raw)
+      force_snapshot =
+        Base64.strict_decode64(latest.raw).bytesize >= FORCED_SNAPSHOT_THRESHOLD_BYTES
+      if session_active?(post_id) && !force_snapshot
+        schedule_commit(post_id, delay_seconds: ACTIVE_SESSION_TTL_SECONDS)
+      else
+        latest = snapshot_state!(post_id) || latest
+      end
+    end
+
     keep_raw_ids = Set.new([latest.id])
     last_committed =
       SharedEditRevision
         .where(post_id: post_id)
         .where.not(post_revision_id: nil)
-        .order("version desc")
+        .order(version: :desc)
         .first
     keep_raw_ids << last_committed.id if last_committed
 
     SharedEditRevision
       .where(post_id: post_id)
+      .where("version <= ?", latest.version)
       .where.not(id: keep_raw_ids.to_a)
       .where.not(raw: nil)
       .update_all(raw: nil)
 
     SharedEditRevision
       .where(post_id: post_id)
+      .where("version <= ?", latest.version)
       .where("updated_at < ?", MAX_HISTORY_AGE.ago)
       .where.not(id: keep_raw_ids.to_a)
       .in_batches
       .delete_all
 
     keep_ids =
-      Set.new(
-        SharedEditRevision
-          .where(post_id: post_id)
-          .order("version desc")
-          .limit(MAX_HISTORY_COUNT)
-          .pluck(:id),
-      )
+      SharedEditRevision
+        .where(post_id: post_id)
+        .order(version: :desc)
+        .limit(MAX_HISTORY_COUNT)
+        .pluck(:id)
+    all_keep_ids = (Set.new(keep_ids) + keep_raw_ids).to_a
 
-    all_keep_ids = (keep_ids + keep_raw_ids).to_a
-    SharedEditRevision.where(post_id: post_id).where.not(id: all_keep_ids).in_batches.delete_all
-
-    # Check if snapshotting is needed to reduce state bloat
-    # Re-fetch latest since it may have been modified above
-    latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
-    if latest&.raw.present? && DiscourseSharedEdits::StateValidator.should_snapshot?(latest.raw)
-      snapshot_state!(post_id, latest)
-    end
+    SharedEditRevision
+      .where(post_id: post_id)
+      .where("version <= ?", latest.version)
+      .where.not(id: all_keep_ids)
+      .in_batches
+      .delete_all
   end
 
   def self.clear_commit_schedule(post_id)
@@ -375,88 +442,51 @@ class SharedEditRevision < ActiveRecord::Base
   end
   private_class_method :update_state_hash!
 
-  def self.snapshot_state!(post_id, latest)
-    return if latest&.raw.blank?
+  def self.snapshot_state!(post_id)
+    baseline =
+      SharedEditRevision.transaction do
+        Post.where(id: post_id).lock.pick(:id)
+        latest = SharedEditRevision.where(post_id: post_id).order(version: :desc).first
+        next if latest&.raw.blank?
+        next if !DiscourseSharedEdits::StateValidator.should_snapshot?(latest.raw)
 
-    original_size =
-      begin
-        Base64.decode64(latest.raw).bytesize
-      rescue StandardError
-        0
+        text = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
+        fresh_state = DiscourseSharedEdits::Yjs.state_from_text(text)[:state]
+        revision =
+          SharedEditRevision.create!(
+            post_id: post_id,
+            client_id: "snapshot",
+            user_id: Discourse.system_user.id,
+            version: latest.version + 1,
+            revision: "",
+            raw: fresh_state,
+            document_id: SecureRandom.uuid,
+            post_revision_id: latest.post_revision_id,
+          )
+        update_state_hash!(revision)
+        revision
       end
+    return if baseline.nil?
 
-    # Get recent revisions within BOTH message bus limits:
-    # - Time: MESSAGE_BUS_MAX_BACKLOG_AGE (10 min)
-    # - Count: MESSAGE_BUS_MAX_BACKLOG_SIZE (500 messages)
-    # This ensures new clients can catch up via message bus
-    all_recent =
-      SharedEditRevision
-        .where(post_id: post_id)
-        .where("created_at > ?", MESSAGE_BUS_MAX_BACKLOG_AGE.seconds.ago)
-        .where.not(revision: ["", nil])
-        .order(version: :desc)
-
-    recent_candidates = all_recent.limit(MESSAGE_BUS_MAX_BACKLOG_SIZE + 1).to_a
-
-    # Check if we need to truncate to message bus size limit
-    needs_resync = recent_candidates.length > MESSAGE_BUS_MAX_BACKLOG_SIZE
-    skipped_corrupted_revisions = 0
-
-    # Take only what message bus can hold, then reverse to apply in order
-    recent_revisions = recent_candidates.first(MESSAGE_BUS_MAX_BACKLOG_SIZE).reverse
-
-    # Extract text and create fresh base state
-    text = DiscourseSharedEdits::Yjs.text_from_state(latest.raw)
-    fresh_state = DiscourseSharedEdits::Yjs.state_from_text(text)[:state]
-
-    # Re-apply recent updates to preserve item ID continuity
-    recent_revisions.each do |rev|
-      result = DiscourseSharedEdits::Yjs.apply_update(fresh_state, rev.revision)
-      fresh_state = result[:state]
-    rescue MiniRacer::RuntimeError, MiniRacer::ParseError, ArgumentError => e
-      skipped_corrupted_revisions += 1
-      Rails.logger.warn(
-        "[SharedEdits] Skipping corrupted revision #{rev.id} (v#{rev.version}) during snapshot for post #{post_id}: #{e.message}",
+    ActiveRecord.after_all_transactions_commit do
+      Rails.logger.info(
+        "[SharedEdits] Rotated document baseline for post #{post_id} at v#{baseline.version}",
       )
-    end
-
-    # Update in place
-    latest.update!(raw: fresh_state)
-
-    new_size =
-      begin
-        Base64.decode64(fresh_state).bytesize
-      rescue StandardError
-        0
-      end
-
-    Rails.logger.info(
-      "[SharedEdits] Snapshotted state for post #{post_id} v#{latest.version}: " \
-        "#{original_size} -> #{new_size} bytes (preserved #{recent_revisions.count} recent updates)",
-    )
-
-    if skipped_corrupted_revisions > 0
-      needs_resync = true
-      Rails.logger.warn(
-        "[SharedEdits] Snapshot skipped #{skipped_corrupted_revisions} corrupted revisions for post #{post_id}; forcing resync",
-      )
-    end
-
-    # If we had to truncate history beyond message bus limits, force resync
-    # so all clients get the new baseline state
-    if needs_resync
-      post = Post.find(post_id)
-      post.publish_message!(
+      Post.find(post_id).publish_message!(
         message_bus_channel(post_id),
-        { action: DiscourseSharedEdits::Protocol::MessageActions::RESYNC, version: latest.version },
+        {
+          action: DiscourseSharedEdits::Protocol::MessageActions::RESYNC,
+          replace: true,
+          version: baseline.version,
+          document_version: baseline.document_id,
+        },
         max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
         max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
       )
-      Rails.logger.info(
-        "[SharedEdits] Broadcast resync for post #{post_id} - history exceeded message bus limits",
-      )
     end
+    baseline
   end
+  private_class_method :snapshot_state!
 
   def self.revise!(
     post_id:,
@@ -468,84 +498,94 @@ class SharedEditRevision < ActiveRecord::Base
     post: nil,
     username: nil,
     allow_blank_state: false,
-    state_vector: nil
+    state_vector: nil,
+    document_version: nil
   )
+    server_document_version = current_document_version(post_id)
+    server_document_version = ensure_document_version!(post_id) if server_document_version.nil?
+    if document_version.nil? && server_document_version == legacy_document_id(post_id)
+      document_version = server_document_version
+    end
+
     retries = 0
+    result = nil
+    message = nil
 
     begin
-      SharedEditRevision.transaction do
-        latest = SharedEditRevision.where(post_id: post_id).lock.order("version desc").first
-        if !latest
-          raise DiscourseSharedEdits::StateValidator::SharedEditsNotInitializedError.new(
-                  "shared edits not initialized",
-                  post_id: post_id,
-                )
-        end
-
-        if state_vector.present?
-          validation =
-            DiscourseSharedEdits::StateValidator.validate_client_state_vector(
-              latest.raw,
-              state_vector,
-            )
-          unless validation[:valid]
-            if validation[:missing_update].present?
-              raise DiscourseSharedEdits::StateValidator::StateDivergedError.new(
-                      "Client state vector is behind server",
-                      post_id: post_id,
-                      missing_update: validation[:missing_update],
-                    )
-            end
-
-            raise DiscourseSharedEdits::StateValidator::InvalidUpdateError.new(
-                    "Invalid state vector: #{validation[:error]}",
+      result, message =
+        SharedEditRevision.transaction do
+          Post.where(id: post_id).lock.pick(:id)
+          latest = SharedEditRevision.where(post_id: post_id).order("version desc").first
+          if !latest
+            raise DiscourseSharedEdits::StateValidator::SharedEditsNotInitializedError.new(
+                    "shared edits not initialized",
                     post_id: post_id,
                   )
           end
-        end
 
-        applied =
-          DiscourseSharedEdits::StateValidator.safe_apply_update(
-            post_id,
-            latest.raw,
-            update,
-            allow_blank_state: allow_blank_state,
-          )
+          current_document_version = latest.document_id
+          if document_version.to_s != current_document_version.to_s
+            raise DiscourseSharedEdits::StateValidator::DocumentReplacedError.new(
+                    document_version: current_document_version,
+                  )
+          end
 
-        revision =
-          SharedEditRevision.create!(
-            post_id: post_id,
-            user_id: user_id,
+          if state_vector.present?
+            validation =
+              DiscourseSharedEdits::StateValidator.validate_client_state_vector(
+                latest.raw,
+                state_vector,
+              )
+            unless validation[:valid]
+              if validation[:missing_update].present?
+                raise DiscourseSharedEdits::StateValidator::StateDivergedError.new(
+                        "Client state vector is behind server",
+                        post_id: post_id,
+                        missing_update: validation[:missing_update],
+                      )
+              end
+
+              raise DiscourseSharedEdits::StateValidator::InvalidUpdateError.new(
+                      "Invalid state vector: #{validation[:error]}",
+                      post_id: post_id,
+                    )
+            end
+          end
+
+          applied =
+            DiscourseSharedEdits::StateValidator.safe_apply_update(
+              post_id,
+              latest.raw,
+              update,
+              allow_blank_state: allow_blank_state,
+            )
+
+          revision =
+            SharedEditRevision.create!(
+              post_id: post_id,
+              user_id: user_id,
+              client_id: client_id,
+              revision: update,
+              raw: applied[:state],
+              document_id: latest.document_id,
+              version: latest.version + 1,
+            )
+          update_state_hash!(revision)
+
+          event = {
+            version: revision.version,
+            update: update,
             client_id: client_id,
-            revision: update,
-            raw: applied[:state],
-            version: latest.version + 1,
-          )
+            user_id: user_id,
+            username: username || User.find(user_id).username,
+            document_version: revision.document_id,
+          }
+          event[:cursor] = cursor if cursor.present?
+          event[:awareness] = awareness if awareness.present?
+          state_hash = revision.respond_to?(:state_hash) ? revision.state_hash : nil
 
-        post ||= Post.find(post_id)
-        username ||= User.find(user_id).username
-        message = {
-          version: revision.version,
-          update: update,
-          client_id: client_id,
-          user_id: user_id,
-          username: username,
-        }
-        message[:cursor] = cursor if cursor.present?
-        message[:awareness] = awareness if awareness.present?
-        post.publish_message!(
-          message_bus_channel(post.id),
-          message,
-          max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
-          max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
-        )
-
-        # Persist and return the hash for the revision we just created so clients
-        # can verify sync against the current authoritative state.
-        update_state_hash!(revision)
-        state_hash = revision.respond_to?(:state_hash) ? revision.state_hash : nil
-        [revision.version, update, state_hash]
-      end
+          [[revision.version, update, state_hash], event]
+        end
     rescue ActiveRecord::RecordNotUnique => e
       retries += 1
       if retries < MAX_REVISION_RETRIES
@@ -553,13 +593,23 @@ class SharedEditRevision < ActiveRecord::Base
           "[SharedEdits] Version conflict for post #{post_id}, retry #{retries}/#{MAX_REVISION_RETRIES}",
         )
         retry
-      else
-        Rails.logger.error(
-          "[SharedEdits] Version conflict for post #{post_id} after #{MAX_REVISION_RETRIES} retries: #{e.message}",
-        )
-        raise
       end
+
+      Rails.logger.error(
+        "[SharedEdits] Version conflict for post #{post_id} after #{MAX_REVISION_RETRIES} retries: #{e.message}",
+      )
+      raise
     end
+
+    mark_session_active!(post_id)
+    schedule_commit(post_id)
+    (post || Post.find(post_id)).publish_message!(
+      message_bus_channel(post_id),
+      message,
+      max_backlog_age: MESSAGE_BUS_MAX_BACKLOG_AGE,
+      max_backlog_size: MESSAGE_BUS_MAX_BACKLOG_SIZE,
+    )
+    result
   rescue MiniRacer::RuntimeError, MiniRacer::ParseError, ArgumentError => e
     raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
             "Yjs operation failed: #{e.message}",
@@ -572,6 +622,7 @@ end
 #
 # Table name: shared_edit_revisions
 #
+#  document_id      :uuid
 #  id               :bigint           not null, primary key
 #  post_id          :integer          not null
 #  raw              :text

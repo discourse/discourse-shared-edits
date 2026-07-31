@@ -21,6 +21,7 @@ RSpec.describe SharedEditRevision do
       user_id: user_id,
       client_id: user_id,
       update: update,
+      document_version: SharedEditRevision.current_document_version(post.id),
     )
   end
 
@@ -119,6 +120,97 @@ RSpec.describe SharedEditRevision do
       }.to raise_error(DiscourseSharedEdits::StateValidator::SharedEditsNotInitializedError)
     end
 
+    it "rejects an update without a document version" do
+      update = DiscourseSharedEdits::Yjs.update_from_state(latest_state(post), "missing identity")
+
+      expect {
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "missing-document-version",
+          update: update,
+        )
+      }.to raise_error(DiscourseSharedEdits::StateValidator::DocumentReplacedError)
+    end
+
+    it "repairs a missing server document identity without rejecting a legacy client" do
+      SharedEditRevision.where(post_id: post.id).update_all(document_id: nil)
+      update = DiscourseSharedEdits::Yjs.update_from_state(latest_state(post), "legacy update")
+
+      result =
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "legacy-client",
+          update: update,
+        )
+
+      document_ids = SharedEditRevision.where(post_id: post.id).distinct.pluck(:document_id)
+      expect(result.first).to eq(2)
+      expect(document_ids).to eq([SharedEditRevision.legacy_document_id(post.id)])
+    end
+
+    it "accepts an unversioned client for a backfilled legacy document" do
+      SharedEditRevision.where(post_id: post.id).update_all(
+        document_id: SharedEditRevision.legacy_document_id(post.id),
+      )
+      update = DiscourseSharedEdits::Yjs.update_from_state(latest_state(post), "legacy tab update")
+
+      result =
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "legacy-tab",
+          update: update,
+        )
+
+      expect(result.first).to eq(2)
+    end
+
+    it "inherits an existing identity when a rolling-deploy revision has none" do
+      document_version = SharedEditRevision.current_document_version(post.id)
+      latest = SharedEditRevision.where(post_id: post.id).order(version: :desc).first
+      SharedEditRevision.create!(
+        post: post,
+        user_id: user.id,
+        client_id: "old-server-client",
+        revision: "",
+        raw: latest.raw,
+        version: latest.version + 1,
+        document_id: nil,
+      )
+      update = DiscourseSharedEdits::Yjs.update_from_state(latest.raw, "rolling deploy update")
+
+      SharedEditRevision.revise!(
+        post_id: post.id,
+        user_id: user.id,
+        client_id: "new-server-client",
+        update: update,
+        document_version: document_version,
+      )
+
+      expect(SharedEditRevision.where(post_id: post.id).distinct.pluck(:document_id)).to eq(
+        [document_version],
+      )
+    end
+
+    it "rejects an update created before the document was replaced" do
+      stale_state = latest_state(post)
+      stale_document_version = SharedEditRevision.current_document_version(post.id)
+      DiscourseSharedEdits::StateValidator.recover_from_post_raw(post.id, force: true)
+      update = DiscourseSharedEdits::Yjs.update_from_state(stale_state, "stale content")
+
+      expect {
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "stale-client",
+          update: update,
+          document_version: stale_document_version,
+        )
+      }.to raise_error(DiscourseSharedEdits::StateValidator::DocumentReplacedError)
+    end
+
     it "publishes to message bus" do
       messages =
         MessageBus.track_publish("/shared_edits/#{post.id}") do
@@ -128,6 +220,50 @@ RSpec.describe SharedEditRevision do
       expect(messages.length).to eq(1)
       expect(messages.first.data[:version]).to eq(2)
       expect(messages.first.data[:user_id]).to eq(user.id)
+    end
+
+    it "does not publish an update when its revision transaction rolls back" do
+      state = latest_state(post)
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "rolled back content")
+      allow(SharedEditRevision).to receive(:update_state_hash!).and_raise("hash failed")
+
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post.id}") do
+          begin
+            SharedEditRevision.revise!(
+              post_id: post.id,
+              user_id: user.id,
+              client_id: "rollback-client",
+              update: update,
+              document_version: SharedEditRevision.current_document_version(post.id),
+            )
+          rescue RuntimeError
+            nil
+          end
+        end
+
+      expect(messages).to be_empty
+      expect(SharedEditRevision.where(post_id: post.id).maximum(:version)).to eq(1)
+    end
+
+    it "schedules a commit before publishing a persisted update" do
+      state = latest_state(post)
+      update = DiscourseSharedEdits::Yjs.update_from_state(state, "persisted content")
+      allow(post).to receive(:publish_message!).and_raise("message bus unavailable")
+
+      expect {
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "publish-failure-client",
+          update: update,
+          document_version: SharedEditRevision.current_document_version(post.id),
+          post: post,
+        )
+      }.to raise_error(RuntimeError, "message bus unavailable")
+
+      expect(SharedEditRevision.where(post_id: post.id).maximum(:version)).to eq(2)
+      expect(Discourse.redis.get(SharedEditRevision.will_commit_key(post.id))).to eq("1")
     end
 
     it "includes cursor metadata when supplied" do
@@ -142,6 +278,7 @@ RSpec.describe SharedEditRevision do
             user_id: user.id,
             client_id: "cursor-client",
             update: update,
+            document_version: SharedEditRevision.current_document_version(post.id),
             cursor: cursor_payload,
           )
         end
@@ -232,6 +369,35 @@ RSpec.describe SharedEditRevision do
       expect(post.reload.raw).to eq(original_raw)
     ensure
       SiteSetting.max_post_length = old_max
+    end
+
+    it "keeps the state of a revision created while compaction is starting" do
+      SharedEditRevision.init!(post)
+      validation_count = 0
+      allow(DiscourseSharedEdits::StateValidator).to receive(
+        :validate_state,
+      ).and_wrap_original do |method, state|
+        validation_count += 1
+        if validation_count == 2
+          latest = SharedEditRevision.where(post_id: post.id).order(version: :desc).first
+          SharedEditRevision.create!(
+            post: post,
+            user_id: Discourse.system_user.id,
+            client_id: "concurrent-client",
+            version: latest.version + 1,
+            revision: "",
+            raw: latest.raw,
+            document_id: latest.document_id,
+          )
+        end
+        method.call(state)
+      end
+
+      SharedEditRevision.commit!(post.id)
+
+      latest = SharedEditRevision.where(post_id: post.id).order(version: :desc).first
+      expect(latest.version).to eq(2)
+      expect(latest.raw).to be_present
     end
 
     it "maintains valid ydoc state after compaction" do
@@ -362,6 +528,28 @@ RSpec.describe SharedEditRevision do
     end
   end
 
+  it "keeps one document identity across ordinary revisions" do
+    post = Fabricate(:post)
+    user = Fabricate(:user)
+    SharedEditRevision.init!(post)
+
+    fake_edit(post, user.id, "updated content")
+
+    expect(SharedEditRevision.where(post_id: post.id).distinct.pluck(:document_id).length).to eq(1)
+  end
+
+  it "changes the document version when history is reset" do
+    post = Fabricate(:post)
+    SharedEditRevision.init!(post)
+    previous_document_version = SharedEditRevision.current_document_version(post.id)
+
+    SharedEditRevision.reset_history!(post.id)
+
+    expect(SharedEditRevision.current_document_version(post.id)).not_to eq(
+      previous_document_version,
+    )
+  end
+
   it "can resolve complex edits and notify" do
     raw = <<~RAW
       0123456
@@ -439,6 +627,7 @@ RSpec.describe SharedEditRevision do
       user_id: user.id,
       client_id: user.id,
       update: DiscourseSharedEdits::Yjs.update_from_text_change("Hello world", "Test")[:update],
+      document_version: SharedEditRevision.current_document_version(post.id),
     )
 
     expect(post.reload.raw).to eq("Hello world")
@@ -470,6 +659,7 @@ RSpec.describe SharedEditRevision do
           user_id: user.id,
           client_id: "test-client",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post.id),
         )
 
       expect(result).to be_present
@@ -490,6 +680,7 @@ RSpec.describe SharedEditRevision do
           user_id: user.id,
           client_id: "test-client",
           update: update,
+          document_version: SharedEditRevision.current_document_version(post.id),
         )
       }.to raise_error(ActiveRecord::RecordNotUnique)
     end
@@ -506,6 +697,7 @@ RSpec.describe SharedEditRevision do
           user_id: user.id,
           client_id: "client-1",
           update: update1,
+          document_version: SharedEditRevision.current_document_version(post.id),
         )
 
       # The second one should also succeed (applying to the new state)
@@ -515,6 +707,7 @@ RSpec.describe SharedEditRevision do
           user_id: user.id,
           client_id: "client-2",
           update: update2,
+          document_version: SharedEditRevision.current_document_version(post.id),
         )
 
       expect(result1.first).to eq(2)
@@ -538,6 +731,10 @@ RSpec.describe SharedEditRevision do
       end
     end
 
+    def expire_active_session
+      Discourse.redis.del(SharedEditRevision.active_session_key(post.id))
+    end
+
     it "triggers snapshot when state exceeds threshold during commit" do
       SharedEditRevision.init!(post)
 
@@ -549,16 +746,44 @@ RSpec.describe SharedEditRevision do
 
       expect(original_size).to be > 100 # Should exceed our lowered threshold
 
-      # Trigger compaction via commit
-      SharedEditRevision.commit!(post.id, apply_to_post: false)
+      previous_document_id = latest.document_id
 
-      # Reload latest and check size was reduced (fresh state has less metadata)
-      latest.reload
-      new_size = Base64.decode64(latest.raw).bytesize
-      # The snapshotted state may or may not be smaller depending on recent updates
-      # but it should still be valid
-      validation = DiscourseSharedEdits::StateValidator.validate_state(latest.raw)
+      expire_active_session
+      SharedEditRevision.commit!(post.id)
+
+      baseline = SharedEditRevision.where(post_id: post.id).order(version: :desc).first
+      new_size = Base64.strict_decode64(baseline.raw).bytesize
+      validation = DiscourseSharedEdits::StateValidator.validate_state(baseline.raw)
+
+      expect(new_size).to be < original_size
       expect(validation[:valid]).to eq(true)
+      expect(baseline.document_id).not_to eq(previous_document_id)
+      expect(baseline.revision).to eq("")
+    end
+
+    it "rejects updates from clients connected to the previous baseline" do
+      SharedEditRevision.init!(post)
+      5.times { |index| fake_edit(post, user.id, "Connected state #{index + 1} with padding") }
+
+      previous = SharedEditRevision.where(post_id: post.id).order(version: :desc).first
+      connected_client_update =
+        DiscourseSharedEdits::Yjs.update_from_state(
+          previous.raw,
+          "Edit submitted by a connected client",
+        )
+
+      expire_active_session
+      SharedEditRevision.commit!(post.id)
+
+      expect {
+        SharedEditRevision.revise!(
+          post_id: post.id,
+          user_id: user.id,
+          client_id: "old-document-client",
+          update: connected_client_update,
+          document_version: previous.document_id,
+        )
+      }.to raise_error(DiscourseSharedEdits::StateValidator::DocumentReplacedError)
     end
 
     it "preserves text content after snapshot" do
@@ -568,7 +793,8 @@ RSpec.describe SharedEditRevision do
       5.times { |i| fake_edit(post, user.id, "Content version #{i + 1} with extra words") }
 
       # Trigger commit which should snapshot
-      SharedEditRevision.commit!(post.id, apply_to_post: false)
+      expire_active_session
+      SharedEditRevision.commit!(post.id)
 
       # Verify text is preserved (should be the last edit)
       latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
@@ -583,7 +809,8 @@ RSpec.describe SharedEditRevision do
       5.times { |i| fake_edit(post, user.id, "Edit #{i + 1} with padding content") }
 
       # Trigger snapshot
-      SharedEditRevision.commit!(post.id, apply_to_post: false)
+      expire_active_session
+      SharedEditRevision.commit!(post.id)
 
       # Create a new edit
       fake_edit(post, user.id, "Post-snapshot edit works")
@@ -609,7 +836,8 @@ RSpec.describe SharedEditRevision do
       expect(recent_count).to eq(3)
 
       # Trigger snapshot
-      SharedEditRevision.commit!(post.id, apply_to_post: false)
+      expire_active_session
+      SharedEditRevision.commit!(post.id)
 
       # State should still be valid
       latest = SharedEditRevision.where(post_id: post.id).order("version desc").first
@@ -632,19 +860,21 @@ RSpec.describe SharedEditRevision do
 
           # Track message bus publications - need apply_to_post: true (default)
           # for compact_history! to be called
+          expire_active_session
           messages =
             MessageBus.track_publish("/shared_edits/#{post.id}") do
               SharedEditRevision.commit!(post.id)
             end
 
-          # Should have a resync message
-          resync_messages = messages.select { |m| m.data[:action] == "resync" }
-          expect(resync_messages).not_to be_empty
+          replacement_messages = messages.select { |message| message.data[:action] == "resync" }
+          expect(replacement_messages.length).to eq(1)
+          expect(replacement_messages.first.data[:replace]).to eq(true)
+          expect(replacement_messages.first.data[:document_version]).to be_present
         end
       end
     end
 
-    it "broadcasts resync when snapshot skips corrupted recent revisions" do
+    it "compacts the authoritative state without replaying individual revisions" do
       stub_const(DiscourseSharedEdits::StateValidator, "SNAPSHOT_THRESHOLD_BYTES", 100.megabytes) do
         SharedEditRevision.init!(post)
 
@@ -660,13 +890,66 @@ RSpec.describe SharedEditRevision do
 
         allow(DiscourseSharedEdits::StateValidator).to receive(:should_snapshot?).and_return(true)
 
+        expire_active_session
         messages =
           MessageBus.track_publish("/shared_edits/#{post.id}") do
             SharedEditRevision.commit!(post.id)
           end
 
-        resync_messages = messages.select { |m| m.data[:action] == "resync" }
-        expect(resync_messages).not_to be_empty
+        replacement_messages = messages.select { |message| message.data[:action] == "resync" }
+        expect(replacement_messages.length).to eq(1)
+        expect(replacement_messages.first.data[:replace]).to eq(true)
+        latest = SharedEditRevision.where(post_id: post.id).order(version: :desc).first
+        expect(DiscourseSharedEdits::StateValidator.validate_state(latest.raw)[:valid]).to eq(true)
+      end
+    end
+
+    it "defers document replacement while an editor session is active" do
+      SharedEditRevision.init!(post)
+      5.times { |i| fake_edit(post, user.id, "Active edit #{i + 1} with padding content") }
+      allow(DiscourseSharedEdits::StateValidator).to receive(:should_snapshot?).and_return(true)
+      document_id = SharedEditRevision.current_document_version(post.id)
+
+      SharedEditRevision.commit!(post.id)
+
+      expect(SharedEditRevision.current_document_version(post.id)).to eq(document_id)
+
+      expire_active_session
+      SharedEditRevision.clear_commit_schedule(post.id)
+      SharedEditRevision.commit!(post.id)
+
+      expect(SharedEditRevision.current_document_version(post.id)).not_to eq(document_id)
+    end
+
+    it "does not publish a replacement when an outer transaction rolls back" do
+      SharedEditRevision.init!(post)
+      fake_edit(post, user.id, "Snapshot candidate with padding content")
+      allow(DiscourseSharedEdits::StateValidator).to receive(:should_snapshot?).and_return(true)
+      document_id = SharedEditRevision.current_document_version(post.id)
+      expire_active_session
+
+      messages =
+        MessageBus.track_publish("/shared_edits/#{post.id}") do
+          SharedEditRevision.transaction do
+            SharedEditRevision.commit!(post.id)
+            raise ActiveRecord::Rollback
+          end
+        end
+
+      expect(messages).to be_empty
+      expect(SharedEditRevision.current_document_version(post.id)).to eq(document_id)
+    end
+
+    it "forces document replacement at the absolute state-size ceiling" do
+      stub_const(SharedEditRevision, "FORCED_SNAPSHOT_THRESHOLD_BYTES", 1) do
+        SharedEditRevision.init!(post)
+        fake_edit(post, user.id, "Active oversized edit with padding content")
+        allow(DiscourseSharedEdits::StateValidator).to receive(:should_snapshot?).and_return(true)
+        document_id = SharedEditRevision.current_document_version(post.id)
+
+        SharedEditRevision.commit!(post.id)
+
+        expect(SharedEditRevision.current_document_version(post.id)).not_to eq(document_id)
       end
     end
 
@@ -679,7 +962,7 @@ RSpec.describe SharedEditRevision do
         original_raw = latest.raw
 
         # Commit should not change the raw since it's below threshold
-        SharedEditRevision.commit!(post.id, apply_to_post: false)
+        SharedEditRevision.commit!(post.id)
 
         latest.reload
         # The raw content should be the same (not snapshotted)

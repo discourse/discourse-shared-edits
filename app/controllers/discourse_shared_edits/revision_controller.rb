@@ -37,54 +37,28 @@ module ::DiscourseSharedEdits
     def latest
       guardian.ensure_can_edit!(@post)
 
-      SharedEditRevision.transaction do
-        revision = SharedEditRevision.where(post_id: @post.id).lock.order("version desc").first
+      begin
+        revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
         raise Discourse::NotFound if revision.nil?
-
-        message_bus_last_id = MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
-
-        begin
-          if revision.raw.blank?
-            raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
-                    "Latest revision has empty state",
-                    post_id: @post.id,
-                  )
-          end
-
-          render json: {
-                   raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
-                   version: revision.version,
-                   state: revision.raw,
-                   message_bus_last_id: message_bus_last_id,
-                 }
-        rescue MiniRacer::RuntimeError,
-               MiniRacer::ParseError,
-               ArgumentError,
-               StateValidator::StateCorruptionError => e
-          Rails.logger.warn(
-            "[SharedEdits] State corrupted for post #{@post.id}, attempting recovery: #{e.message}",
-          )
-          recovery = StateValidator.recover_from_post_raw(@post.id, force: true)
-          if recovery[:success]
-            publish_resync!(recovery[:new_version])
-            revision = SharedEditRevision.where(post_id: @post.id).order("version desc").first
-
-            message_bus_last_id =
-              MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id))
-
-            render json: {
-                     raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
-                     version: revision.version,
-                     state: revision.raw,
-                     message_bus_last_id: message_bus_last_id,
-                   }
-          else
-            raise Discourse::InvalidAccess.new(
-                    I18n.t("shared_edits.errors.state_corrupted"),
-                    custom_message: "shared_edits.errors.state_corrupted",
-                  )
-          end
+        if revision.raw.blank?
+          raise DiscourseSharedEdits::StateValidator::StateCorruptionError.new(
+                  "Latest revision has empty state",
+                  post_id: @post.id,
+                )
         end
+
+        SharedEditRevision.mark_session_active!(@post.id)
+        render json: latest_response(revision)
+      rescue MiniRacer::RuntimeError,
+             MiniRacer::ParseError,
+             ArgumentError,
+             StateValidator::StateCorruptionError => e
+        Rails.logger.warn("[SharedEdits] State corrupted for post #{@post.id}: #{e.message}")
+        render json: {
+                 error: Protocol::Errors::NEEDS_RECOVERY_TEXT,
+                 message: I18n.t("shared_edits.errors.needs_recovery_text"),
+               },
+               status: :conflict
       end
     end
 
@@ -146,7 +120,36 @@ module ::DiscourseSharedEdits
         return
       end
 
-      RateLimiter.new(current_user, "shared-edit-revise-#{@post.id}", 120, 1.minute).performed!
+      requested_document_version = params[:document_version]
+      current_document_version = SharedEditRevision.current_document_version(@post.id)
+      current_document_version =
+        SharedEditRevision.ensure_document_version!(@post.id) if current_document_version.nil?
+      if requested_document_version.nil? &&
+           current_document_version == SharedEditRevision.legacy_document_id(@post.id)
+        requested_document_version = current_document_version
+      end
+      if requested_document_version.to_s != current_document_version.to_s
+        render json: {
+                 error: Protocol::Errors::STATE_RECOVERED,
+                 document_version: current_document_version,
+               },
+               status: :conflict
+        return
+      end
+
+      cursor_params = params[:cursor]
+      cursor_hash =
+        case cursor_params
+        when ActionController::Parameters
+          cursor_params.permit(:start, :end, :direction).to_h
+        when Hash
+          cursor_params.slice(:start, :end, :direction, "start", "end", "direction")
+        end
+      cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
+      if cursor_hash.present? && !StateValidator.validate_cursor(cursor_hash)[:valid]
+        render json: failed_json, status: :bad_request
+        return
+      end
 
       awareness = params[:awareness]
       if awareness.present?
@@ -158,17 +161,38 @@ module ::DiscourseSharedEdits
       end
 
       if params[:update].blank?
-        if awareness.present?
+        if ActiveModel::Type::Boolean.new.cast(params[:heartbeat])
           return if !ensure_valid_client_id!(client_id)
 
+          RateLimiter.new(
+            current_user,
+            "shared-edit-heartbeat-#{@post.id}",
+            10,
+            1.minute,
+          ).performed!
+          SharedEditRevision.mark_session_active!(@post.id)
+          render json: success_json
+        elsif awareness.present? || cursor_hash.present?
+          return if !ensure_valid_client_id!(client_id)
+
+          RateLimiter.new(
+            current_user,
+            "shared-edit-presence-#{@post.id}",
+            600,
+            1.minute,
+          ).performed!
+          message = {
+            client_id: client_id,
+            user_id: current_user.id,
+            username: current_user.username,
+            document_version: current_document_version,
+          }
+          message[:awareness] = awareness if awareness.present?
+          message[:cursor] = cursor_hash if cursor_hash.present?
+          SharedEditRevision.mark_session_active!(@post.id)
           @post.publish_message!(
             SharedEditRevision.message_bus_channel(@post.id),
-            {
-              client_id: client_id,
-              user_id: current_user.id,
-              username: current_user.username,
-              awareness: awareness,
-            },
+            message,
             max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
             max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
           )
@@ -179,16 +203,7 @@ module ::DiscourseSharedEdits
         return
       end
 
-      cursor_params = params[:cursor]
-      cursor_hash =
-        case cursor_params
-        when ActionController::Parameters
-          cursor_params.permit(:start, :end).to_h
-        when Hash
-          cursor_params.slice(:start, :end, "start", "end")
-        end
-      cursor_hash = cursor_hash&.transform_keys(&:to_s)&.compact
-
+      RateLimiter.new(current_user, "shared-edit-revise-#{@post.id}", 120, 1.minute).performed!
       allow_blank_state =
         if guardian.can_toggle_shared_edits?
           ActiveModel::Type::Boolean.new.cast(params[:allow_blank_state])
@@ -205,6 +220,7 @@ module ::DiscourseSharedEdits
         awareness: awareness,
         allow_blank_state: allow_blank_state,
         state_vector: params[:state_vector],
+        document_version: requested_document_version,
       ) do |result|
         on_success do
           response = { version: result[:version], update: result[:update] }
@@ -262,6 +278,12 @@ module ::DiscourseSharedEdits
       render json: {
                error: Protocol::Errors::NEEDS_RECOVERY_TEXT,
                message: I18n.t("shared_edits.errors.needs_recovery_text"),
+             },
+             status: :conflict
+    rescue StateValidator::DocumentReplacedError => e
+      render json: {
+               error: Protocol::Errors::STATE_RECOVERED,
+               document_version: e.document_version,
              },
              status: :conflict
     rescue StateValidator::StateDivergedError => e
@@ -354,10 +376,25 @@ module ::DiscourseSharedEdits
       end
     end
 
+    def latest_response(revision)
+      {
+        raw: DiscourseSharedEdits::Yjs.text_from_state(revision.raw),
+        version: revision.version,
+        document_version: revision.document_id,
+        state: revision.raw,
+        message_bus_last_id: MessageBus.last_id(SharedEditRevision.message_bus_channel(@post.id)),
+      }
+    end
+
     def publish_resync!(version)
       @post.publish_message!(
         SharedEditRevision.message_bus_channel(@post.id),
-        { action: Protocol::MessageActions::RESYNC, version: version },
+        {
+          action: Protocol::MessageActions::RESYNC,
+          replace: true,
+          version: version,
+          document_version: SharedEditRevision.current_document_version(@post.id),
+        },
         max_backlog_age: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_AGE,
         max_backlog_size: SharedEditRevision::MESSAGE_BUS_MAX_BACKLOG_SIZE,
       )

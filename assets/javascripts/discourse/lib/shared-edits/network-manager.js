@@ -12,6 +12,7 @@ import { SHARED_EDITS_ERRORS, SHARED_EDITS_MESSAGE_ACTIONS } from "./protocol";
 import { computeStateHash, triggerYjsLoad } from "./yjs-document";
 
 const THROTTLE_SAVE = 500;
+const ACTIVE_SESSION_HEARTBEAT_INTERVAL = 30_000;
 const MESSAGE_BUS_CHANNEL_PREFIX = "/shared_edits";
 const MAX_PENDING_UPDATES = 100;
 const MAX_RETRY_ATTEMPTS = 3;
@@ -26,9 +27,12 @@ export default class NetworkManager {
 
   pendingUpdates = [];
   pendingAwarenessUpdate = null;
+  pendingCursorUpdate = null;
   ajaxInProgress = false;
   inFlightRequest = null;
   messageBusLastId = null;
+  revisionVersion = null;
+  documentVersion = null;
   skipNextStateVector = false; // Skip state vector validation after resync
 
   // State hash sync tracking
@@ -38,22 +42,55 @@ export default class NetworkManager {
   #lastVerifiedHash = null; // Cache to avoid redundant hash computation
 
   #sendUpdatesThrottleId = null;
+  #heartbeatIntervalId = null;
+  #sendChain = Promise.resolve();
+  #generation = 0;
   #messageBusPostId = null;
   #messageBusLastSubscribedId = null;
   #onRemoteMessage = null;
   #onResync = null;
   #getRecoveryText = null;
+  #request = ajax;
   #retryCount = 0;
 
   #handleRemoteMessage = (message) => {
     if (message.action === SHARED_EDITS_MESSAGE_ACTIONS.RESYNC) {
-      this.#lastVerifiedHash = null; // Invalidate cache on resync
-      this.#onResync?.();
+      this.#lastVerifiedHash = null;
+      if (
+        message.replace &&
+        message.document_version &&
+        this.documentVersion === message.document_version
+      ) {
+        return;
+      }
+      this.#onResync?.(message);
+      return;
+    }
+
+    if (
+      message.document_version &&
+      this.documentVersion &&
+      message.document_version !== this.documentVersion
+    ) {
+      this.#lastVerifiedHash = null;
+      this.#onResync?.({
+        action: SHARED_EDITS_MESSAGE_ACTIONS.RESYNC,
+        replace: true,
+        version: message.version,
+        document_version: message.document_version,
+      });
       return;
     }
 
     if (message.client_id === this.messageBus.clientId) {
       return;
+    }
+
+    if (message.version) {
+      this.revisionVersion = Math.max(
+        this.revisionVersion || 0,
+        message.version
+      );
     }
 
     // Parse update from base64 if present
@@ -69,18 +106,52 @@ export default class NetworkManager {
     this.#onRemoteMessage?.(parsedMessage);
   };
 
-  constructor(context, { onRemoteMessage, onResync, getRecoveryText } = {}) {
+  constructor(
+    context,
+    { onRemoteMessage, onResync, getRecoveryText, request = ajax } = {}
+  ) {
     setOwner(this, getOwner(context));
     this.#onRemoteMessage = onRemoteMessage;
     this.#onResync = onResync;
     this.#getRecoveryText = getRecoveryText;
+    this.#request = request;
   }
 
   // API calls
 
   async fetchState(postId) {
-    const data = await ajax(`/shared_edits/p/${postId}.json`);
+    const url = `/shared_edits/p/${postId}.json`;
+    let data;
+
+    try {
+      data = await this.#request(url);
+    } catch (error) {
+      if (
+        error.jqXHR?.status !== 409 ||
+        error.jqXHR?.responseJSON?.error !==
+          SHARED_EDITS_ERRORS.NEEDS_RECOVERY_TEXT
+      ) {
+        throw error;
+      }
+
+      const recoveryText = this.#getRecoveryText?.();
+      if (recoveryText == null) {
+        throw error;
+      }
+
+      await this.#request(url, {
+        method: "PUT",
+        data: {
+          client_id: this.messageBus.clientId,
+          recovery_text: recoveryText,
+        },
+      });
+      data = await this.#request(url);
+    }
+
     this.messageBusLastId = data.message_bus_last_id ?? -1;
+    this.revisionVersion = data.version;
+    this.documentVersion = data.document_version;
     return data;
   }
 
@@ -101,6 +172,18 @@ export default class NetworkManager {
     this.#sendUpdatesThrottled();
   }
 
+  queueCursorUpdate(update) {
+    this.pendingCursorUpdate = update;
+    this.#sendUpdatesThrottled();
+  }
+
+  discardPendingUpdates() {
+    this.#generation += 1;
+    this.pendingUpdates = [];
+    this.pendingAwarenessUpdate = null;
+    this.pendingCursorUpdate = null;
+  }
+
   #sendUpdatesThrottled() {
     this.#sendUpdatesThrottleId = throttle(
       this,
@@ -116,28 +199,42 @@ export default class NetworkManager {
 
   // Called by the orchestrator service to actually send updates
   // Returns { resynced: true } if a recovery-related 409 triggered a resync
-  async sendUpdates(
+  sendUpdates(postId, options = {}) {
+    const generation = this.#generation;
+    const send = this.#sendChain.then(() =>
+      this.#sendUpdateBatch(postId, options, generation)
+    );
+    this.#sendChain = send.catch(() => {});
+    return send;
+  }
+
+  async #sendUpdateBatch(
     postId,
-    { cursorPayload, isRichMode, getClientId, allowBlankState, getDoc } = {}
+    { cursorPayload, isRichMode, getClientId, allowBlankState, getDoc } = {},
+    generation
   ) {
-    const updatesToSend = [...this.pendingUpdates];
+    if (generation !== this.#generation) {
+      return { resynced: true, discarded: true };
+    }
+
+    const updatesToSend = this.pendingUpdates;
     const awarenessToSend = this.pendingAwarenessUpdate;
+    const cursorToSend = this.pendingCursorUpdate || cursorPayload;
 
     const hasDocUpdates = updatesToSend.length > 0;
     const hasAwarenessUpdate = isRichMode && awarenessToSend;
+    const hasCursorUpdate = !isRichMode && cursorToSend;
 
-    if ((!hasDocUpdates && !hasAwarenessUpdate) || !postId) {
+    if (
+      (!hasDocUpdates && !hasAwarenessUpdate && !hasCursorUpdate) ||
+      !postId
+    ) {
       return { resynced: false };
-    }
-
-    if (this.ajaxInProgress) {
-      if (this.inFlightRequest) {
-        await this.inFlightRequest;
-      }
     }
 
     const data = {
       client_id: getClientId?.() || this.messageBus.clientId,
+      document_version: this.documentVersion,
     };
 
     if (allowBlankState) {
@@ -146,12 +243,25 @@ export default class NetworkManager {
 
     this.pendingUpdates = [];
     this.pendingAwarenessUpdate = null;
+    this.pendingCursorUpdate = null;
+
+    let stateVectorToSend = null;
+    if (hasDocUpdates && !this.skipNextStateVector) {
+      const doc = getDoc?.();
+      const Y = window.SharedEditsYjs?.Y || window.Y;
+      if (doc && Y?.encodeStateVector) {
+        stateVectorToSend = uint8ArrayToBase64(Y.encodeStateVector(doc));
+      }
+    }
 
     let sentUpdates = [];
 
     if (hasDocUpdates) {
       const { payload, deferredUpdates } =
         await this.#prepareUpdatePayload(updatesToSend);
+      if (generation !== this.#generation) {
+        return { resynced: true, discarded: true };
+      }
       const queuedDuringMerge = this.pendingUpdates;
       this.pendingUpdates = deferredUpdates.concat(queuedDuringMerge);
       sentUpdates = updatesToSend.slice(
@@ -161,15 +271,8 @@ export default class NetworkManager {
       if (payload) {
         data.update = uint8ArrayToBase64(payload);
 
-        // Include state vector for server-side validation (unless skipped after resync)
-        if (!this.skipNextStateVector) {
-          const doc = getDoc?.();
-          if (doc) {
-            const Y = window.SharedEditsYjs?.Y || window.Y;
-            if (Y?.encodeStateVector) {
-              data.state_vector = uint8ArrayToBase64(Y.encodeStateVector(doc));
-            }
-          }
+        if (stateVectorToSend) {
+          data.state_vector = stateVectorToSend;
         }
       }
     }
@@ -178,21 +281,32 @@ export default class NetworkManager {
       data.awareness = uint8ArrayToBase64(awarenessToSend);
     }
 
-    if (!isRichMode && cursorPayload) {
-      data.cursor = cursorPayload;
+    if (hasCursorUpdate) {
+      data.cursor = cursorToSend;
     }
 
     this.ajaxInProgress = true;
 
     try {
-      this.inFlightRequest = ajax(`/shared_edits/p/${postId}.json`, {
+      this.inFlightRequest = this.#request(`/shared_edits/p/${postId}.json`, {
         method: "PUT",
         data,
       });
 
       const response = await this.inFlightRequest;
+      if (generation !== this.#generation) {
+        return { resynced: true, discarded: true };
+      }
       this.#retryCount = 0;
-      this.skipNextStateVector = false; // Reset after successful update
+      if (response?.version) {
+        this.revisionVersion = Math.max(
+          this.revisionVersion || 0,
+          response.version
+        );
+      }
+      if (hasDocUpdates) {
+        this.skipNextStateVector = false;
+      }
 
       // Store getDoc for hash verification
       this.#getDoc = getDoc;
@@ -204,6 +318,10 @@ export default class NetworkManager {
 
       return { resynced: false };
     } catch (e) {
+      if (generation !== this.#generation) {
+        return { resynced: true, discarded: true };
+      }
+
       // Handle corruption that needs client text for recovery
       if (
         e.jqXHR?.status === 409 &&
@@ -224,7 +342,7 @@ export default class NetworkManager {
             this.#retryCount = 0;
             // Trigger resync to reinitialize local Y.Doc with the server's fresh state
             // This ensures the local doc matches exactly what the server accepted
-            this.#onResync?.();
+            this.#onResync?.({ replace: true });
             return { resynced: true, recovered: true };
           } catch (retryError) {
             debugError("Recovery with client text failed:", retryError);
@@ -240,7 +358,7 @@ export default class NetworkManager {
         ].includes(e.jqXHR?.responseJSON?.error)
       ) {
         this.#retryCount = 0;
-        this.#onResync?.();
+        this.#onResync?.({ replace: true });
         return { resynced: true };
       }
 
@@ -293,6 +411,9 @@ export default class NetworkManager {
       if (awarenessToSend && !this.pendingAwarenessUpdate) {
         this.pendingAwarenessUpdate = awarenessToSend;
       }
+      if (cursorToSend && !this.pendingCursorUpdate) {
+        this.pendingCursorUpdate = cursorToSend;
+      }
       throw e;
     } finally {
       this.inFlightRequest = null;
@@ -307,7 +428,8 @@ export default class NetworkManager {
 
     const hasUpdates =
       this.pendingUpdates.length > 0 ||
-      (options.isRichMode && this.pendingAwarenessUpdate);
+      (options.isRichMode && this.pendingAwarenessUpdate) ||
+      (!options.isRichMode && this.pendingCursorUpdate);
 
     let result = { resynced: false };
     if (hasUpdates) {
@@ -319,6 +441,43 @@ export default class NetworkManager {
     }
 
     return result;
+  }
+
+  #startHeartbeat(postId) {
+    this.#stopHeartbeat();
+    this.#heartbeatIntervalId = setInterval(async () => {
+      try {
+        await this.#request(`/shared_edits/p/${postId}.json`, {
+          method: "PUT",
+          data: {
+            client_id: this.messageBus.clientId,
+            document_version: this.documentVersion,
+            heartbeat: true,
+          },
+        });
+      } catch (error) {
+        if (
+          error.jqXHR?.status === 409 &&
+          error.jqXHR?.responseJSON?.error ===
+            SHARED_EDITS_ERRORS.STATE_RECOVERED
+        ) {
+          this.#stopHeartbeat();
+          this.#onResync?.({
+            replace: true,
+            document_version: error.jqXHR.responseJSON.document_version,
+          });
+          return;
+        }
+        debugWarn("Failed to refresh shared edit session", error);
+      }
+    }, ACTIVE_SESSION_HEARTBEAT_INTERVAL);
+  }
+
+  #stopHeartbeat() {
+    if (this.#heartbeatIntervalId) {
+      clearInterval(this.#heartbeatIntervalId);
+      this.#heartbeatIntervalId = null;
+    }
   }
 
   // MessageBus subscription
@@ -347,9 +506,11 @@ export default class NetworkManager {
     );
     this.#messageBusPostId = postId;
     this.#messageBusLastSubscribedId = lastId;
+    this.#startHeartbeat(postId);
   }
 
   unsubscribe(postId) {
+    this.#stopHeartbeat();
     if (postId) {
       this.messageBus.unsubscribe(messageBusChannel(postId));
     }
@@ -367,11 +528,12 @@ export default class NetworkManager {
     }
     this.#clearHashSyncTimeout();
     this.unsubscribe();
-    this.pendingUpdates = [];
-    this.pendingAwarenessUpdate = null;
+    this.discardPendingUpdates();
     this.ajaxInProgress = false;
     this.inFlightRequest = null;
     this.messageBusLastId = null;
+    this.revisionVersion = null;
+    this.documentVersion = null;
     this.skipNextStateVector = false;
     this.#targetStateHash = null;
     this.#lastVerifiedHash = null;

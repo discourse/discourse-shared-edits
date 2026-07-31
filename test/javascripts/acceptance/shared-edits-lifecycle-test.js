@@ -1,4 +1,4 @@
-import { waitUntil } from "@ember/test-helpers";
+import { settled, waitUntil } from "@ember/test-helpers";
 import { test } from "qunit";
 import { parsePostData } from "discourse/tests/helpers/create-pretender";
 import { acceptance } from "discourse/tests/helpers/qunit-helpers";
@@ -12,6 +12,7 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
   let getRequests;
   let putRequests;
   let commitCalls;
+  let draftDeletes;
 
   needs.user({ can_toggle_shared_edits: true });
   needs.settings({ shared_edits_enabled: true });
@@ -20,6 +21,7 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
     getRequests = [];
     putRequests = [];
     commitCalls = [];
+    draftDeletes = [];
 
     server.put("/shared_edits/p/:id/enable.json", () =>
       helper.response({ success: "OK" })
@@ -49,14 +51,15 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
       return helper.response({ success: "OK" });
     });
 
+    server.delete("/drafts/:key", (request) => {
+      draftDeletes.push(request.params.key);
+      return helper.response({ success: "OK" });
+    });
+
     server.put("/shared_edits/p/:id/commit.json", () => {
       commitCalls.push(Date.now());
       return helper.response({ success: "OK" });
     });
-
-    server.put("/shared_edits/p/:id/selection", () =>
-      helper.response({ success: "OK" })
-    );
   });
 
   test("subscribe fetches initial state and creates Y.Doc", async function (assert) {
@@ -121,6 +124,81 @@ acceptance("Discourse Shared Edits | Lifecycle", function (needs) {
       false,
       "Composer observer should be attached after finalization"
     );
+  });
+
+  test("restored shared-edit draft is discarded after reload", async function (assert) {
+    await openSharedEditComposer();
+
+    const manager = await waitForSharedEditManager(this.container);
+    const composer = this.container.lookup("service:composer");
+    const initialGetCount = getRequests.length;
+
+    assert.true(
+      composer.model.disableDrafts,
+      "shared edits disable draft persistence"
+    );
+    assert.strictEqual(
+      composer.model.draftKey,
+      "shared_edit_398",
+      "shared edits use an isolated non-persisted draft key"
+    );
+
+    manager.resetForTests();
+    composer.model.setProperties({
+      composeState: "draft",
+      disableDrafts: false,
+      draftKey: "topic_398",
+      draftSequence: 7,
+      reply: "disconnected content restored by the browser",
+    });
+    await settled();
+    composer.model.set("composeState", "open");
+
+    await waitUntil(() => !composer.model?.viewOpen);
+    await settled();
+
+    assert.deepEqual(
+      draftDeletes,
+      ["topic_398.json"],
+      "the stale shared-edit draft is deleted"
+    );
+    assert.strictEqual(
+      getRequests.length,
+      initialGetCount,
+      "restored content never enters the collaboration pipeline"
+    );
+    assert.strictEqual(
+      manager.sessionState,
+      "idle",
+      "the disconnected manager remains idle"
+    );
+    assert.deepEqual(
+      commitCalls,
+      [],
+      "discarding a restored draft does not commit"
+    );
+  });
+
+  test("non-shared drafts are not discarded", async function (assert) {
+    await openSharedEditComposer();
+
+    const manager = await waitForSharedEditManager(this.container);
+    const composer = this.container.lookup("service:composer");
+    manager.resetForTests();
+    draftDeletes.length = 0;
+    composer.model.setProperties({
+      action: "reply",
+      composeState: "draft",
+      disableDrafts: false,
+      draftKey: "topic_398",
+      draftSequence: 8,
+    });
+    await settled();
+    composer.model.set("composeState", "open");
+    await settled();
+
+    assert.true(composer.model.viewOpen, "the normal draft remains open");
+    assert.deepEqual(draftDeletes, [], "the normal draft is not deleted");
   });
 
   test("commit flushes pending updates before closing", async function (assert) {
@@ -257,10 +335,6 @@ acceptance("Discourse Shared Edits | Lifecycle with State", function (needs) {
     server.put("/shared_edits/p/:id", () => helper.response({ success: "OK" }));
 
     server.put("/shared_edits/p/:id/commit.json", () =>
-      helper.response({ success: "OK" })
-    );
-
-    server.put("/shared_edits/p/:id/selection", () =>
       helper.response({ success: "OK" })
     );
   });

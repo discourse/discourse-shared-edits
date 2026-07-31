@@ -69,6 +69,7 @@ RSpec.describe "Discourse Shared Edits | Editing a post" do
       user_id: remote_user.id,
       client_id: "remote-client",
       update: update,
+      document_version: latest.document_id,
     )
 
     try_until_success { expect(composer).to have_content("lorem ipsum\nremote edit") }

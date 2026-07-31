@@ -80,8 +80,14 @@ const sharedEditsProsemirrorExtension = {
     }
 
     const { Plugin } = params.pmState;
-    const { xmlFragment, awareness, seedXmlFromView, _stateId, onError } =
-      sharedEditYjsState;
+    const {
+      xmlFragment,
+      awareness,
+      seedXmlFromView,
+      loadProsemirror = ensureYjsProsemirrorLoaded,
+      _stateId,
+      onError,
+    } = sharedEditYjsState;
     const capturedStateId = _stateId;
     const currentState = sharedEditYjsState;
 
@@ -105,6 +111,14 @@ const sharedEditsProsemirrorExtension = {
       view(view) {
         let destroyed = false;
         let configurationStarted = false;
+        const previousContentEditable = view.dom.contentEditable;
+        view.dom.contentEditable = "false";
+
+        const restoreEditing = () => {
+          if (view.dom) {
+            view.dom.contentEditable = previousContentEditable;
+          }
+        };
 
         const isStillValid = () => {
           if (destroyed) {
@@ -134,6 +148,7 @@ const sharedEditsProsemirrorExtension = {
         };
 
         const reportError = (error) => {
+          restoreEditing();
           if (!isStillValid()) {
             return;
           }
@@ -144,9 +159,10 @@ const sharedEditsProsemirrorExtension = {
         if (!configurationStarted) {
           configurationStarted = true;
 
-          ensureYjsProsemirrorLoaded()
+          loadProsemirror()
             .then(() => {
               if (!isStillValid()) {
+                restoreEditing();
                 return;
               }
 
@@ -161,6 +177,7 @@ const sharedEditsProsemirrorExtension = {
               }
 
               if (!isStillValid()) {
+                restoreEditing();
                 return;
               }
 
@@ -193,9 +210,6 @@ const sharedEditsProsemirrorExtension = {
                 (plugin) => plugin !== loaderPlugin
               );
 
-              currentState.configured = true;
-              setProsemirrorViewGetter(() => view);
-
               try {
                 view.updateState(
                   view.state.reconfigure({
@@ -207,6 +221,9 @@ const sharedEditsProsemirrorExtension = {
                     ],
                   })
                 );
+                currentState.configured = true;
+                setProsemirrorViewGetter(() => view);
+                restoreEditing();
               } catch (e) {
                 debugError("Error updating view state:", e);
                 reportError(e);
@@ -221,6 +238,7 @@ const sharedEditsProsemirrorExtension = {
         return {
           destroy() {
             destroyed = true;
+            restoreEditing();
           },
         };
       },

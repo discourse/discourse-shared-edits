@@ -141,7 +141,7 @@ export function transformSelection(selection, delta) {
     }
   });
 
-  return { start, end };
+  return { ...selection, start, end };
 }
 
 // User colors for cursor display

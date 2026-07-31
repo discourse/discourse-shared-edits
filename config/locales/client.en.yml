@@ -11,6 +11,7 @@ en:
         rich_mode_failed: "Shared edits couldn't load the rich editor collaboration plugins. The composer has been closed; please try again or switch to markdown mode."
         invalid_update: "Shared edits couldn't apply the latest update. Please refresh and try again."
         blank_state_rejected: "Shared edits stopped because the server detected a change that would wipe the post. Please reopen the composer to resync."
+        document_replaced: "The shared document was replaced on the server. Unsaved changes from the previous document could not be applied."
         recovery_not_needed: "Recovery is only needed when shared edit state is unhealthy."
         commit_failed: "Shared edits could not be committed for this post."
         disable_failed: "Shared edits could not be disabled because pending changes could not be committed."

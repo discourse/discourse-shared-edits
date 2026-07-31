@@ -25,6 +25,7 @@ RSpec.describe DiscourseSharedEdits::Revise do
       awareness: nil,
       allow_blank_state: false,
       state_vector: state_vector,
+      document_version: SharedEditRevision.current_document_version(post.id),
     )
   end
 
@@ -42,6 +43,7 @@ RSpec.describe DiscourseSharedEdits::Revise do
       awareness: nil,
       allow_blank_state: false,
       state_vector: nil,
+      document_version: SharedEditRevision.current_document_version(post.id),
     ) do |result|
       on_success do
         response = {

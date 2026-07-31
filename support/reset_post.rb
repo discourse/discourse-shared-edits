@@ -47,6 +47,7 @@ DiscourseSharedEdits::SharedEditRevision.create!(
   version: 1,
   revision: "",
   raw: initial_state[:state],
+  document_id: SecureRandom.uuid,
 )
 
 puts "Done! New state:"

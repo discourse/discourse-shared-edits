@@ -11,6 +11,7 @@ import { service } from "@ember/service";
 import { i18n } from "discourse-i18n";
 import {
   clearSharedEditYjsState,
+  getSharedEditYjsState,
   setSharedEditYjsState,
 } from "../shared-edits-prosemirror-extension";
 import { debugError, debugWarn } from "./debug";
@@ -219,6 +220,12 @@ export default class RichModeSync {
 
   get richModeFailed() {
     return this._richModeFailed;
+  }
+
+  cancelPendingEditorBinding() {
+    if (!getSharedEditYjsState()?.configured) {
+      clearSharedEditYjsState();
+    }
   }
 
   // Cleanup
