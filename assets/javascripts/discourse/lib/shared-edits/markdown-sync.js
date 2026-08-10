@@ -305,38 +305,41 @@ export default class MarkdownSync {
       this.#pendingRelativeSelection = null;
     }
 
-    if (!adjustedSelection) {
-      adjustedSelection = transformSelection(selection, event.delta || []);
+    const textValue = text.toString();
+    const currentValue = textarea?.value;
+
+    if (!adjustedSelection && selection && currentValue !== undefined) {
+      adjustedSelection = this.#transformSelectionThroughDiff(
+        currentValue,
+        textValue,
+        selection
+      );
     }
 
-    const textValue = text.toString();
     suppressComposerChangeFn?.(() => {
       this.composer.model?.set("reply", textValue);
     });
 
-    if (textarea) {
-      const currentValue = textarea.value;
-      if (currentValue === textValue) {
-        return;
-      }
+    if (!textarea || currentValue === textValue) {
+      return;
+    }
 
-      this.#applyDiffToTextarea(textarea, currentValue, textValue);
+    this.#applyDiffToTextarea(textarea, currentValue, textValue);
 
-      this.cursorOverlay?.refresh();
+    this.cursorOverlay?.refresh();
 
-      if (adjustedSelection) {
-        textarea.setSelectionRange(
-          adjustedSelection.start,
-          adjustedSelection.end,
-          adjustedSelection.direction || "none"
-        );
-      }
+    if (adjustedSelection) {
+      textarea.setSelectionRange(
+        adjustedSelection.start,
+        adjustedSelection.end,
+        adjustedSelection.direction || "none"
+      );
+    }
 
-      if (scrollTop !== undefined && textarea.scrollTop !== scrollTop) {
-        window.requestAnimationFrame(() => {
-          textarea.scrollTop = scrollTop;
-        });
-      }
+    if (scrollTop !== undefined && textarea.scrollTop !== scrollTop) {
+      window.requestAnimationFrame(() => {
+        textarea.scrollTop = scrollTop;
+      });
     }
   }
 

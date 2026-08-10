@@ -124,6 +124,24 @@ module("Unit | Lib | shared-edits | markdown-sync", function (hooks) {
       cb()
     );
 
-    assert.strictEqual(textarea.value, "abcd");
+    assert.strictEqual(textarea.value, "abcd", "the DOM value is patched");
+  });
+
+  test("preserves the caret against the actual diff when the DOM is stale (regression)", function (assert) {
+    textarea.value = "hello world";
+    textarea.setSelectionRange(0, 0);
+
+    const event = { delta: [{ delete: 5 }, { insert: "hi mars" }] };
+    const currentYText = { toString: () => "hi mars" };
+
+    sync.handleTextChange(event, { origin: {} }, currentYText, {}, (cb) =>
+      cb()
+    );
+
+    assert.strictEqual(
+      textarea.selectionStart,
+      0,
+      "the caret stays before the untouched shared prefix instead of jumping to where the delta claims"
+    );
   });
 });
