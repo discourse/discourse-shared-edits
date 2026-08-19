@@ -55,6 +55,16 @@ function initWithApi(api, siteSettings) {
     }
   );
 
+  api.registerValueTransformer(
+    "composer-actions-content",
+    ({ value, context }) => {
+      if (context.action === SHARED_EDIT_ACTION) {
+        return [];
+      }
+      return value;
+    }
+  );
+
   api.registerRichEditorExtension(sharedEditsProsemirrorExtension);
 
   customizePostMenu(api);
