@@ -17,8 +17,11 @@
     }
   }
 
-  .title-and-category,
-  .composer-actions {
+  .title-and-category {
+    display: none;
+  }
+
+  .composer-actions-trigger > .d-icon {
     display: none;
   }
 
