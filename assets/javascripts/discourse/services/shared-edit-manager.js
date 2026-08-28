@@ -378,7 +378,7 @@ export default class SharedEditManager extends Service {
           localText !== pendingText
         ) {
           this.#yjsDocument?.doc?.transact(
-            () => applyDiff(this.#yjsDocument.text, pendingText, localText),
+            () => applyDiff(this.#yjsDocument.text, localText),
             this
           );
           pendingText = localText;
@@ -701,7 +701,7 @@ export default class SharedEditManager extends Service {
     }
 
     this.#yjsDocument.doc.transact(
-      () => applyDiff(this.#yjsDocument.text, current, next),
+      () => applyDiff(this.#yjsDocument.text, next),
       this
     );
   }

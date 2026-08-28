@@ -37,7 +37,11 @@ async function run() {
     await page.waitForTimeout(500);
     // Debug: see what buttons are available
     const buttons = await page.$$eval("#post_2 button", (btns) =>
-      btns.map((b) => ({ class: b.className, title: b.title, text: b.innerText }))
+      btns.map((b) => ({
+        class: b.className,
+        title: b.title,
+        text: b.innerText,
+      }))
     );
     console.log("Available buttons on post_2:", JSON.stringify(buttons));
 
@@ -203,7 +207,13 @@ async function run() {
 
     console.log("\n=== RELEVANT CONSOLE LOGS ===");
     consoleLogs
-      .filter((log) => log.includes("[SharedEdits]") || log.includes("[error]") || log.includes("composer") || log.includes("Composer"))
+      .filter(
+        (log) =>
+          log.includes("[SharedEdits]") ||
+          log.includes("[error]") ||
+          log.includes("composer") ||
+          log.includes("Composer")
+      )
       .forEach((log) => console.log(log));
   } catch (e) {
     console.error("Error:", e);

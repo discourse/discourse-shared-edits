@@ -25,7 +25,7 @@ module("Unit | Lib | shared-edits | markdown-sync", function (hooks) {
     doc = new Y.Doc();
     text = doc.getText("post");
     text.insert(0, textarea.value);
-    sync = new MarkdownSync(this.owner);
+    sync = new MarkdownSync(this);
     text.observe((event, transaction) => {
       sync.handleTextChange(event, transaction, text, doc);
     });
@@ -112,5 +112,36 @@ module("Unit | Lib | shared-edits | markdown-sync", function (hooks) {
       "the caret returns to the edit position"
     );
     undoManager.destroy();
+  });
+
+  test("patches the DOM value against the Yjs target instead of only relying on the event delta (regression)", function (assert) {
+    textarea.value = "xyz";
+
+    const event = { delta: [{ retain: 3 }, { insert: "d" }] };
+    const currentYText = { toString: () => "abcd" };
+
+    sync.handleTextChange(event, { origin: {} }, currentYText, {}, (cb) =>
+      cb()
+    );
+
+    assert.strictEqual(textarea.value, "abcd", "the DOM value is patched");
+  });
+
+  test("preserves the caret against the actual diff when the DOM is stale (regression)", function (assert) {
+    textarea.value = "hello world";
+    textarea.setSelectionRange(0, 0);
+
+    const event = { delta: [{ delete: 5 }, { insert: "hi mars" }] };
+    const currentYText = { toString: () => "hi mars" };
+
+    sync.handleTextChange(event, { origin: {} }, currentYText, {}, (cb) =>
+      cb()
+    );
+
+    assert.strictEqual(
+      textarea.selectionStart,
+      0,
+      "the caret stays before the untouched shared prefix instead of jumping to where the delta claims"
+    );
   });
 });

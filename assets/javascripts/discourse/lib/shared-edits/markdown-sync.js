@@ -305,72 +305,41 @@ export default class MarkdownSync {
       this.#pendingRelativeSelection = null;
     }
 
-    if (!adjustedSelection) {
-      adjustedSelection = transformSelection(selection, event.delta || []);
+    const textValue = text.toString();
+    const currentValue = textarea?.value;
+
+    if (!adjustedSelection && selection && currentValue !== undefined) {
+      adjustedSelection = this.#transformSelectionThroughDiff(
+        currentValue,
+        textValue,
+        selection
+      );
     }
 
-    const textValue = text.toString();
     suppressComposerChangeFn?.(() => {
       this.composer.model?.set("reply", textValue);
     });
 
-    if (textarea) {
-      const currentValue = textarea.value;
-      if (currentValue === textValue) {
-        return;
-      }
+    if (!textarea || currentValue === textValue) {
+      return;
+    }
 
-      let appliedSurgically = false;
+    this.#applyDiffToTextarea(textarea, currentValue, textValue);
 
-      if (event.delta) {
-        let expectedOldLength = textValue.length;
-        let insertLen = 0;
-        let deleteLen = 0;
+    this.cursorOverlay?.refresh();
 
-        for (const op of event.delta) {
-          if (op.insert) {
-            insertLen += typeof op.insert === "string" ? op.insert.length : 0;
-          } else if (op.delete) {
-            deleteLen += op.delete;
-          }
-        }
-        expectedOldLength = expectedOldLength - insertLen + deleteLen;
+    if (adjustedSelection) {
+      textarea.setSelectionRange(
+        adjustedSelection.start,
+        adjustedSelection.end,
+        adjustedSelection.direction || "none"
+      );
+    }
 
-        if (currentValue.length === expectedOldLength) {
-          let index = 0;
-          event.delta.forEach((op) => {
-            if (op.retain) {
-              index += op.retain;
-            } else if (op.insert) {
-              textarea.setRangeText(op.insert, index, index);
-              index += op.insert.length;
-            } else if (op.delete) {
-              textarea.setRangeText("", index, index + op.delete);
-            }
-          });
-          appliedSurgically = true;
-        }
-      }
-
-      if (!appliedSurgically) {
-        this.#applyDiffToTextarea(textarea, currentValue, textValue);
-      }
-
-      this.cursorOverlay?.refresh();
-
-      if (adjustedSelection) {
-        textarea.setSelectionRange(
-          adjustedSelection.start,
-          adjustedSelection.end,
-          adjustedSelection.direction || "none"
-        );
-      }
-
-      if (scrollTop !== undefined && textarea.scrollTop !== scrollTop) {
-        window.requestAnimationFrame(() => {
-          textarea.scrollTop = scrollTop;
-        });
-      }
+    if (scrollTop !== undefined && textarea.scrollTop !== scrollTop) {
+      window.requestAnimationFrame(() => {
+        textarea.scrollTop = scrollTop;
+      });
     }
   }
 
