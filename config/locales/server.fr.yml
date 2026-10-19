@@ -7,5 +7,21 @@
 fr:
   shared_edits:
     reason: "Modifié par : %{users}"
+    errors:
+      state_corrupted: "L'état de l'édition collaborative est corrompu et n'a pas pu être restauré. Veuillez réessayer."
+      state_recovered: "L'état de l'édition collaborative était corrompu, mais il a été restauré. Actualisez la page pour poursuivre les modifications."
+      needs_recovery_text: "L'état de l'édition collaborative doit être restauré. Veuillez réessayer."
+      recovery_failed: "Impossible de restaurer l'état de l'édition collaborative. Actualisez la page et réessayez."
+      recovery_not_needed: "La restauration de l'édition collaborative n'est autorisée que lorsque l'état partagé présente un problème."
+      commit_failed: "Impossible d'enregistrer les modifications collaboratives de cette publication."
+      disable_failed: "Impossible de désactiver l'édition collaborative, car les modifications en attente n'ont pas pu être enregistrées."
+      reset_failed: "Impossible de réinitialiser l'historique de l'édition collaborative, car les modifications en attente n'ont pas pu être enregistrées."
+      blank_state_rejected: "Une modification collaborative a été bloquée, car elle aurait effacé toute la publication. Rouvrez l'éditeur pour actualiser le document partagé."
+      invalid_update: "Les données de modification envoyées sont mal formées. Actualisez la page et réessayez."
+      post_length_exceeded: "Le contenu de la publication dépasse la longueur maximale (%{current}/%{max} caractères)"
+      not_initialized: "L'édition collaborative n'est pas active pour cette publication. Actualisez la page et réessayez."
   site_settings:
-    shared_edits_enabled: Activer le partage, la collaboration et l'édition sur les messages désignés.
+    shared_edits_enabled: Activer l'édition collaborative des publications sélectionnées.
+    shared_edits_editor_mode: "Mode d'édition collaborative : « markdown » utilise du texte brut et « rich » utilise l'éditeur de texte enrichi ProseMirror."
+    shared_edits_commit_delay_seconds: "Délai, en secondes, avant l'enregistrement des modifications collaboratives dans la publication. Une valeur plus faible entraîne des enregistrements plus fréquents, mais peut augmenter la charge du serveur."
+    shared_edits_toggle_allowed_groups: "Groupes autorisés à activer ou désactiver l'édition collaborative des publications."

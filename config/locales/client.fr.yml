@@ -7,8 +7,18 @@
 fr:
   js:
     shared_edits:
-      enable_shared_edits: "Activer les modifications partagées"
-      disable_shared_edits: "Désactiver les modifications partagées"
+      enable_shared_edits: "Activer l'édition collaborative"
+      disable_shared_edits: "Désactiver l'édition collaborative"
       edit: "Modifier"
       button_title: "Modifier la publication en collaboration"
+      composer_title: "Modification collaborative de la publication en cours"
       done: "Terminé"
+      errors:
+        rich_mode_failed: "Impossible de charger les modules de collaboration de l'éditeur de texte enrichi. L'éditeur de publication a été fermé. Veuillez réessayer ou passer en mode Markdown."
+        invalid_update: "Impossible d'appliquer la dernière modification collaborative. Veuillez actualiser la page et réessayer."
+        blank_state_rejected: "L'édition collaborative a été interrompue, car le serveur a détecté une modification qui aurait effacé la publication. Rouvrez l'éditeur pour resynchroniser le document."
+        document_replaced: "Le document partagé a été remplacé sur le serveur. Les modifications non enregistrées de l'ancien document n'ont pas pu être appliquées."
+        recovery_not_needed: "Une restauration n'est nécessaire qu'en cas de problème avec l'état de l'édition collaborative."
+        commit_failed: "Impossible d'enregistrer les modifications collaboratives de cette publication."
+        disable_failed: "Impossible de désactiver l'édition collaborative, car les modifications en attente n'ont pas pu être enregistrées."
+        reset_failed: "Impossible de réinitialiser l'historique de l'édition collaborative, car les modifications en attente n'ont pas pu être enregistrées."
